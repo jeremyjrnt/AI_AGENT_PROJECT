@@ -1,0 +1,8 @@
+qdrant-client
+torch
+transformers
+langchain
+pandas
+numpy
+fastapi
+uvicorn
