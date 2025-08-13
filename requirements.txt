@@ -6,3 +6,9 @@ pandas
 numpy
 fastapi
 uvicorn
+langchain-core
+langchain-community
+langchain-openai
+openai
+tiktoken
+python-dotenv

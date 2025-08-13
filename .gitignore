@@ -1,1 +1,44 @@
-.venv
+# Python Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables (IMPORTANT: contient vos clés API Qdrant)
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (optionnel - vos fichiers HTML sont volumineux)
+data/
+parsed_data.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints
