@@ -12,3 +12,13 @@ langchain-openai
 openai
 tiktoken
 python-dotenv
+# HTML parsing
+beautifulsoup4
+lxml
+# PDF processing
+PyMuPDF>=1.23.0
+PyPDF2>=3.0.0
+# Additional dependencies for RFP parser
+sentence-transformers
+scikit-learn
+openpyxl
