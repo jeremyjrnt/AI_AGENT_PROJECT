@@ -18,7 +18,8 @@ def main():
     print()
     
     # 1. PARSING HTML avec votre fonction
-    folder_path = r"C:\Users\edens\OneDrive - Technion\Aviv-25\DataScienceApp\AI_AGENT_PROJECT\data\help.okta.com"
+    import sys
+    folder_path = sys.argv[1] if len(sys.argv) > 1 else r"data/okta_doc"
     print(f"📂 Chemin: {folder_path}")
     data = parse_folder_to_data(folder_path)
     
@@ -74,14 +75,14 @@ def main():
     if points_count > 0:
         result = client.scroll(
             collection_name=INTERNAL_COLLECTION,
-            limit=2,
+            limit=5,
             with_payload=True,
             with_vectors=False
         )
-        
+
         points = result[0]
         print(f"\n📄 Exemples de points stockés:")
-        
+
         for i, point in enumerate(points, 1):
             print(f"\n  Point {i}:")
             print(f"    - Text: {point.payload.get('text', '')[:80]}...")
