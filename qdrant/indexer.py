@@ -194,6 +194,7 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
         question_col = None
         answer_col = None
         comment_col = None
+        validator_col = None
         
         for col in df.columns:
             col_lower = col.lower().strip()
@@ -203,6 +204,8 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
                 answer_col = col
             elif 'comment' in col_lower or 'note' in col_lower:
                 comment_col = col
+            elif 'validator' in col_lower:
+                validator_col = col
         
         if not question_col or not answer_col:
             raise ValueError("Excel must contain 'Question' and 'Answer' columns")
@@ -213,6 +216,7 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
             question = str(row[question_col]).strip()
             answer = str(row[answer_col]).strip()
             comment = str(row[comment_col]).strip() if comment_col else ""
+            validator = str(row[validator_col]).strip() if validator_col else ""
             
             # Skip empty questions
             if not question or question.lower() in ['nan', 'none', '']:
@@ -225,6 +229,7 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
                 "question": question,
                 "answer": answer,
                 "comment": comment,
+                "validator_name": validator,  # Add validator name
                 "rfp_file": excel_path.name,
                 "rfp_path": str(excel_path),
                 "question_index": idx,
@@ -252,7 +257,7 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
         raise
 
 
-def batch_index_completed_rfps(completed_rfps_folder: str) -> int:
+'''def batch_index_completed_rfps(completed_rfps_folder: str) -> int:
     """
     Batch index all completed RFP Excel files from a folder.
     
@@ -300,4 +305,4 @@ def batch_index_completed_rfps(completed_rfps_folder: str) -> int:
     print(f"📁 Processed {len(processed_files)} files")
     print(f"📊 Total Q&A pairs indexed: {total_indexed}")
     
-    return total_indexed
+    return total_indexed'''
