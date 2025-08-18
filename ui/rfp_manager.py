@@ -46,9 +46,11 @@ except Exception as e:
 # Import indexing functions
 try:
     from qdrant.indexer import index_internal_data_with_source, index_completed_rfp
+    from qdrant.rfp_tracker import get_rfp_tracker
 except Exception as e:
     index_internal_data_with_source = None
     index_completed_rfp = None
+    get_rfp_tracker = None
 
 # Import retriever for pre-completion
 try:
@@ -375,6 +377,61 @@ def main():
                     st.rerun()
                 else:
                     st.sidebar.warning("⚠️ No documents were indexed")
+    
+    st.sidebar.markdown("---")
+    
+    # RFP Statistics Section
+    st.sidebar.header("📊 RFP Statistics")
+    
+    if get_rfp_tracker:
+        try:
+            tracker = get_rfp_tracker()
+            stats = tracker.get_stats()
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                st.metric("Current RFP #", stats['current_rfp_number'])
+                st.metric("Total Processed", stats['total_rfps_processed'])
+            
+            with col2:
+                cleanup_status = "✅ On" if stats['cleanup_enabled'] else "❌ Off"
+                st.metric("Auto Cleanup", cleanup_status)
+                st.metric("Max Age Diff", stats['max_age_difference'])
+            
+            # Cleanup controls
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("🧹 Force Cleanup", help="Clean old RFP data now"):
+                    cleanup_count = tracker.cleanup_old_rfps(force=True)
+                    if cleanup_count > 0:
+                        st.success(f"Cleaned {cleanup_count} old documents")
+                    else:
+                        st.info("No old documents found")
+            
+            with col2:
+                if st.button("🔄 Reset Counter", help="Reset RFP counter (use carefully)"):
+                    st.session_state.show_reset_dialog = True
+            
+            # Reset dialog
+            if st.session_state.get('show_reset_dialog', False):
+                with st.sidebar.expander("⚠️ Reset RFP Counter", expanded=True):
+                    new_value = st.number_input("New counter value", min_value=0, value=0)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Confirm Reset"):
+                            tracker.reset_counter(new_value)
+                            st.success(f"Counter reset to {new_value}")
+                            st.session_state.show_reset_dialog = False
+                            st.rerun()
+                    with col2:
+                        if st.button("❌ Cancel"):
+                            st.session_state.show_reset_dialog = False
+                            st.rerun()
+            
+        except Exception as e:
+            st.sidebar.error(f"Error loading RFP stats: {e}")
+    else:
+        st.sidebar.info("RFP tracking not available")
     
     st.sidebar.markdown("---")
     

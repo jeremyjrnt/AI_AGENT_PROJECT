@@ -21,6 +21,7 @@ from .client import (
     INTERNAL_COLLECTION,
     RFP_QA_COLLECTION,
 )
+from .rfp_tracker import get_rfp_tracker
 
 JsonDoc = Dict[str, Any]
 
@@ -158,14 +159,15 @@ def index_internal_data_with_source(data_folder_path: str, source_name: str = "i
         return 0
 
 
-def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = None) -> int:
+def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = None, auto_cleanup: bool = True) -> int:
     """
-    Index completed RFP Q&A pairs into vector database.
+    Index completed RFP Q&A pairs into vector database with automatic numbering and cleanup.
     The vector is created from the question text, and the answer + metadata are stored as payload.
     
     Args:
         rfp_excel_path: Path to completed RFP Excel file
         rfp_source_info: Additional source information (client, project, etc.)
+        auto_cleanup: Whether to perform automatic cleanup of old RFPs
         
     Returns:
         int: Number of Q&A pairs indexed
@@ -181,6 +183,12 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
     excel_path = Path(rfp_excel_path)
     if not excel_path.exists():
         raise FileNotFoundError(f"RFP Excel file not found: {rfp_excel_path}")
+    
+    # Get RFP tracker and assign next RFP number
+    tracker = get_rfp_tracker()
+    rfp_number = tracker.get_next_rfp_number()
+    
+    print(f"📋 Processing RFP #{rfp_number}: {excel_path.name}")
     
     # Default source info
     if rfp_source_info is None:
@@ -222,10 +230,11 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
             if not question or question.lower() in ['nan', 'none', '']:
                 continue
             
-            # Create metadata
+            # Create metadata with RFP number
             metadata = {
                 "source": "past-rfp",
                 "source_type": "completed_rfp",
+                "rfp_number": rfp_number,  # Add RFP number for tracking and cleanup
                 "question": question,
                 "answer": answer,
                 "comment": comment,
@@ -246,8 +255,17 @@ def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = N
             })
         
         if qa_documents:
-            print(f"Indexing {len(qa_documents)} Q&A pairs from {excel_path.name}")
-            return index_rfp_qa_pairs(qa_documents)
+            print(f"📝 Indexing {len(qa_documents)} Q&A pairs from {excel_path.name}")
+            indexed_count = index_rfp_qa_pairs(qa_documents)
+            
+            # Perform automatic cleanup after successful indexing
+            if auto_cleanup and indexed_count > 0:
+                print(f"🧹 Running automatic cleanup for RFP #{rfp_number}...")
+                cleanup_count = tracker.cleanup_old_rfps()
+                if cleanup_count > 0:
+                    print(f"✅ Cleaned up {cleanup_count} old RFP documents")
+            
+            return indexed_count
         else:
             print(f"No valid Q&A pairs found in {excel_path}")
             return 0
