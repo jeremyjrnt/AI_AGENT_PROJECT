@@ -317,8 +317,20 @@ def pre_complete_rfp(current_df, mode="dev"):
 def main():
     st.set_page_config(page_title="RFP Manager", page_icon="📋", layout="wide")
     
-    # Header
-    st.title("🚀 RFP Question Manager")
+    # Header with RFP counter
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("🚀 RFP Question Manager")
+    with col2:
+        if get_rfp_tracker is not None:
+            try:
+                tracker = get_rfp_tracker()
+                current_rfp = tracker.get_current_rfp_number()
+                next_rfp = current_rfp + 1
+                st.metric("Next RFP #", next_rfp, help="Number that will be assigned to the next processed RFP")
+            except:
+                pass
+    
     st.markdown("---")
     
     # Sidebar for file management
@@ -461,6 +473,45 @@ def main():
     
     st.sidebar.markdown("---")
     
+    # RFP Statistics Section
+    if get_rfp_tracker is not None:
+        st.sidebar.header("📊 RFP Statistics")
+        
+        try:
+            tracker = get_rfp_tracker()
+            stats = tracker.get_stats()
+            
+            # Display key metrics
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                st.metric("Current RFP", stats['current_rfp_number'])
+            with col2:
+                st.metric("Total Processed", stats['total_rfps_processed'])
+            
+            # Cleanup settings
+            st.sidebar.write(f"🧹 Cleanup: {'✅ Enabled' if stats['cleanup_enabled'] else '❌ Disabled'}")
+            st.sidebar.write(f"⏰ Max Age: {stats['max_age_difference']} RFPs")
+            
+            # Management buttons
+            if st.sidebar.button("🔍 Inspect Collection", help="View RFP age distribution"):
+                with st.spinner("🔍 Inspecting RFP collection..."):
+                    # This could be expanded to show results in main area
+                    st.sidebar.success("Check terminal for detailed analysis")
+            
+            if st.sidebar.button("🧹 Force Cleanup", help="Remove old RFP documents"):
+                with st.spinner("🧹 Cleaning up old RFPs..."):
+                    cleanup_count = tracker.cleanup_old_rfps(force=True)
+                    if cleanup_count > 0:
+                        st.sidebar.success(f"✅ Cleaned {cleanup_count} documents")
+                    else:
+                        st.sidebar.info("📝 No cleanup needed")
+                    st.rerun()
+            
+        except Exception as e:
+            st.sidebar.error(f"⚠️ RFP Stats Error: {e}")
+    
+    st.sidebar.markdown("---")
+    
     # Load available RFP files
     rfp_files = load_rfp_files()
     
@@ -468,29 +519,52 @@ def main():
         st.sidebar.warning("No RFP files found in data/new_RFPs/")
         st.sidebar.info("👆 Upload PDF files using the drag & drop area above")
     else:
-        # File selection
-        st.sidebar.subheader("📋 Select RFP File")
-        selected_file = st.sidebar.selectbox(
-            "Choose an RFP file:",
-            rfp_files,
-            help="Select a PDF file from data/new_RFPs to parse and edit"
-        )
+        # No files available message will be shown in main body
+        pass
     
-        if st.sidebar.button("📖 Parse RFP", type="primary"):
-            with st.spinner("Parsing RFP file..."):
-                df = parse_selected_rfp(selected_file)
-                
-                if df is not None:
-                    st.session_state.rfp_data = df
-                    st.session_state.current_file = selected_file
-                    st.success(f"Successfully parsed {len(df)} questions from {selected_file}")
+    # Main content area - RFP Selection and Processing
+    st.header("📋 RFP Processing Workflow")
     
-    # Main content area
+    # Step 1: RFP File Selection
+    if not rfp_files:
+        st.warning("🚫 No RFP files found. Please upload PDF files using the sidebar.")
+        st.info("💡 Use the **📤 Upload New RFPs** section in the sidebar to add PDF files.")
+    else:
+        # RFP File Selection in main body
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.subheader("🎯 Step 1: Select RFP File")
+            selected_file = st.selectbox(
+                "Choose an RFP PDF file to process:",
+                options=rfp_files,
+                help="Select a PDF file from the uploaded RFPs to parse and edit",
+                key="main_rfp_selector"
+            )
+            
+        with col2:
+            st.subheader("🚀 Step 2: Parse")
+            if st.button("📖 Parse RFP", type="primary", use_container_width=True):
+                with st.spinner("🔍 Parsing RFP file..."):
+                    df = parse_selected_rfp(selected_file)
+                    
+                    if df is not None:
+                        st.session_state.rfp_data = df
+                        st.session_state.current_file = selected_file
+                        st.success(f"✅ Successfully parsed {len(df)} questions from {selected_file}")
+                        st.rerun()  # Refresh to show editing interface
+                    else:
+                        st.error("❌ Failed to parse the RFP file. Please check the file format.")
+        
+        st.markdown("---")
+    
+    # Step 3: Editing Interface (only shown after parsing)
     if 'rfp_data' in st.session_state:
-        st.header(f"📋 Editing: {st.session_state.current_file}")
+        st.header(f"✏️ Step 3: Edit Questions & Answers")
+        st.subheader(f"📄 Current File: {st.session_state.current_file}")
         
         # Display editable table
-        st.subheader("Questions, Answers & Comments")
+        st.markdown("### 📝 Questions, Answers & Comments")
         
         # Create editable data editor
         edited_df = st.data_editor(
