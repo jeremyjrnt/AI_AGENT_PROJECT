@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test simple du pipeline RAG : Parser → Qdrant → Indexer → Vérification
+Simple RAG pipeline test: Parser → Qdrant → Indexer → Verification
+Moved from project root to test/ folder.
 """
 
 from parsers.internal_parser import parse_folder_to_data, save_parsed_data
@@ -10,41 +11,39 @@ from qdrant.indexer import index_internal_documents
 import settings
 
 
-def main():
+def test_rag_pipeline():
     print("🚀 TEST PIPELINE RAG")
     print("=" * 40)
     print(f"🔧 Provider: {settings.EMBEDDING_PROVIDER}")
-    print(f"🔧 Modèle: {settings.EMBEDDING_MODEL}")
+    print(f"🔧 Model: {settings.EMBEDDING_MODEL}")
     print()
     
-    # 1. PARSING HTML avec votre fonction
+    # 1. PARSING HTML
     import sys
     folder_path = sys.argv[1] if len(sys.argv) > 1 else r"data/okta_doc"
-    print(f"📂 Chemin: {folder_path}")
+    print(f"📂 Path: {folder_path}")
     data = parse_folder_to_data(folder_path)
     
     if not data:
-        print("❌ Aucune donnée parsée")
+        print("❌ No data parsed")
         return
     
-    print(f"✅ {len(data)} chunks parsés")
+    print(f"✅ {len(data)} chunks parsed")
     save_parsed_data(data, "parsed_data.json")
     
-    # Afficher exemple
-    print(f"\n📄 Exemple de chunk:")
+    # Show example
+    print(f"\n📄 Example chunk:")
     chunk = data[0]
     print(f"  - text: {chunk.get('text', '')[:100]}...")
     print(f"  - metadata: {chunk.get('metadata', {})}")
     
-    # 2. SETUP QDRANT avec votre fonction  
-    print(f"\n🔧 Configuration Qdrant...")
+    # 2. SETUP QDRANT
+    print(f"\n🔧 Qdrant setup...")
     vector_size = setup_collections_dynamic(reset_rfp_history=False)
     print(f"✅ Collections OK (vector_size: {vector_size})")
     
-    # 3. INDEXATION avec votre fonction
-    print(f"\n📤 Indexation dans Qdrant...")
-    
-    # Format pour votre indexer
+    # 3. INDEXING
+    print(f"\n📤 Indexing in Qdrant...")
     docs_for_indexer = []
     for chunk in data:
         doc = {
@@ -61,17 +60,17 @@ def main():
         docs_for_indexer.append(doc)
     
     count = index_internal_documents(docs_for_indexer)
-    print(f"✅ {count} documents indexés")
+    print(f"✅ {count} documents indexed")
     
-    # 4. VÉRIFICATION avec votre client
-    print(f"\n🔍 Vérification...")
+    # 4. VERIFICATION
+    print(f"\n🔍 Verification...")
     client = get_qdrant_client()
     collection_info = client.get_collection(INTERNAL_COLLECTION)
     points_count = collection_info.points_count
     
     print(f"✅ Collection '{INTERNAL_COLLECTION}': {points_count} points")
     
-    # Voir quelques points
+    # Show some points
     if points_count > 0:
         result = client.scroll(
             collection_name=INTERNAL_COLLECTION,
@@ -81,7 +80,7 @@ def main():
         )
 
         points = result[0]
-        print(f"\n📄 Exemples de points stockés:")
+        print(f"\n📄 Example stored points:")
 
         for i, point in enumerate(points, 1):
             print(f"\n  Point {i}:")
@@ -89,9 +88,9 @@ def main():
             print(f"    - Title: {point.payload.get('title', 'N/A')}")
             print(f"    - File: {point.payload.get('file_name', 'N/A')}")
     
-    print(f"\n🎉 PIPELINE TERMINÉ !")
-    print(f"✅ {len(data)} chunks → {count} indexés → {points_count} dans Qdrant")
+    print(f"\n🎉 PIPELINE FINISHED!")
+    print(f"✅ {len(data)} chunks → {count} indexed → {points_count} in Qdrant")
 
 
 if __name__ == "__main__":
-    main()
+    test_rag_pipeline()

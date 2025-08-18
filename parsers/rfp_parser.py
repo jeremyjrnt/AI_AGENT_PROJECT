@@ -318,15 +318,16 @@ def parse_rfp_text(text: str, model_name: str = "pattern", openai_api_key: Optio
 
 def save_questions_to_excel(questions: List[Dict], filepath: str) -> str:
     """Write Excel with exact columns order."""
-    cols = ["qid","question_text","question_type","section_ref","priority",
-            "deadline_hint","answer_guidance","entities","original_span","confidence"]
+    # Nouvelle structure : Questions, Answer, Comments
     df = pd.DataFrame(questions)
-    for c in cols:
-        if c not in df.columns:
-            df[c] = None
-    df = df[cols]
+    # 'Questions' = question_text, 'Answer' et 'Comments' vides
+    df_out = pd.DataFrame({
+        'Questions': df['question_text'] if 'question_text' in df else None,
+        'Answer': '',
+        'Comments': ''
+    })
     os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-    df.to_excel(filepath, index=False)
+    df_out.to_excel(filepath, index=False)
     return filepath
 
 
