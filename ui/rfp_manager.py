@@ -317,6 +317,140 @@ def pre_complete_rfp(current_df, mode="dev"):
 def main():
     st.set_page_config(page_title="RFP Manager", page_icon="📋", layout="wide")
     
+    # Create main tabs
+    tab1, tab2 = st.tabs(["📋 RFP Manager", "📚 How to Use"])
+    
+    with tab1:
+        show_rfp_manager()
+    
+    with tab2:
+        show_how_to_use()
+
+def show_how_to_use():
+    """How to Use guide interface"""
+    st.title("📚 How to Use this RFP Manager")
+    st.markdown("---")
+    
+    st.markdown("""
+    ## 🚀 Complete Guide to RFP Management System
+    
+    ### 📤 Step 1: Upload RFP Files
+    - **Drag & Drop**: Use the sidebar file uploader to drag PDF files
+    - **Manual**: Add PDF files directly to the `data/new_RFPs/` folder
+    - **Supported**: Only PDF format is supported for RFP processing
+    
+    ### 📚 Step 1.5: Build Knowledge Base (Optional)
+    - **Upload Internal Docs**: Use the "Knowledge Base Management" section
+    - **Supported Formats**: .txt, .md, .markdown files or .zip archives
+    - **Auto-Index**: Documents are automatically indexed in vector database
+    - **Smart Search**: Indexed documents will be used for AI-powered answer suggestions
+    
+    ### 📋 Step 2: Process RFP
+    1. **Select**: Choose an RFP PDF from the main interface dropdown
+    2. **Parse**: Click "Parse RFP" to extract questions automatically
+    3. **Review**: Check the extracted questions for accuracy
+    
+    ### 🤖 Step 2.5: ReAct AI Pre-completion (NEW!)
+    - **Pre-complete**: Click "Pre-complete" to auto-fill answers using ReAct AI
+    - **Intelligent Reasoning**: Uses ReAct (Reasoning + Acting) pattern with Ollama
+    - **Three Smart Tools**: Automatically chooses between Internal Docs + Past RFPs + Web Search
+    - **Context-Aware**: AI decides which tools to use based on question content
+    - **Comments Integration**: AI answers are placed in the Comments column for review
+    - **Smart Yes/No Detection**: Automatically fills Answer column when appropriate
+    
+    ### ✏️ Step 3: Edit & Review
+    - **Interactive Table**: Modify answers and comments directly in the interface
+    - **Dropdown Answers**: Use dropdown for Yes/No answers
+    - **Custom Comments**: Add detailed explanations and context
+    - **Validator Names**: Enter validator names for each Q&A trio for accountability
+    - **Real-time Editing**: Changes are saved automatically as you type
+    
+    ### 💾 Step 4: Save & Submit
+    - **Save to Excel**: Export your work to the outputs folder (draft version)
+    - **Submit & Index**: Complete workflow with submitter name:
+      - Saves Excel file with all answers and metadata
+      - Indexes Q&A pairs in vector database with validator info
+      - Archives RFP for future reference
+      - Triggers automatic cleanup of old RFPs if needed
+    
+    ### 🔗 Automatic Vector Database Integration
+    - **Smart Indexing**: Each question becomes a searchable vector in Qdrant
+    - **Rich Metadata**: Answers, comments, validator names, submitter info, and completion date stored
+    - **Future AI Enhancement**: Completed RFPs improve future pre-completion accuracy
+    - **Knowledge Accumulation**: Building organizational RFP expertise over time
+    - **Accountability**: Full traceability of who validated each Q&A and who submitted the RFP
+    - **Age Management**: Automatic cleanup of old RFPs (configurable, default 20 RFPs)
+    
+    ### 🎯 Key Features Overview:
+    """)
+    
+    # Feature cards
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        #### 🔧 Core Features
+        - ✅ **Drag & Drop Upload**: Easy PDF file management
+        - 📖 **Smart Parsing**: Automatic question extraction from PDFs
+        - 📝 **Interactive Editing**: Real-time table editing with validation
+        - 💾 **Excel Export**: Professional output formatting
+        - 🔄 **Reset Function**: Start over with original parsed questions
+        """)
+        
+    with col2:
+        st.markdown("""
+        #### 🤖 AI Features
+        - 🧠 **ReAct AI Pre-completion**: Auto-fill answers using intelligent reasoning
+        - 🔍 **Multi-Tool Intelligence**: AI chooses best sources per question
+        - 📊 **Progress Tracking**: Live statistics and completion percentage
+        - 🎯 **Validation & Accountability**: Track validator names and submitter info
+        - 🗄️ **Vector Database**: Smart indexing for future improvements
+        """)
+    
+    st.markdown("---")
+    
+    # Technical details
+    with st.expander("🔧 Technical Details", expanded=False):
+        st.markdown("""
+        ### System Architecture
+        - **Frontend**: Streamlit web interface
+        - **Vector Database**: Qdrant for semantic search
+        - **AI Models**: Sentence Transformers + Ollama/OpenAI
+        - **File Processing**: PDF parsing with question extraction
+        - **Data Storage**: Excel export + vector indexing
+        
+        ### RFP Numbering System
+        - **Automatic Numbering**: Each processed RFP gets a unique sequential number
+        - **Metadata Tracking**: RFP number stored in all generated documents
+        - **Age-based Cleanup**: Automatically removes old RFP data (default: 20 RFPs difference)
+        - **State Management**: Persistent tracking across sessions
+        
+        ### AI Processing Modes
+        - **Development Mode**: Uses free Ollama models locally
+        - **Production Mode**: Uses OpenAI API for better accuracy (requires API key)
+        - **Hybrid Approach**: Combines multiple data sources for best results
+        """)
+    
+    # Tips and best practices
+    with st.expander("💡 Tips & Best Practices", expanded=False):
+        st.markdown("""
+        ### For Best Results:
+        1. **Upload Quality PDFs**: Clear, text-based PDFs work best
+        2. **Build Knowledge Base**: Upload internal documentation before processing
+        3. **Review AI Suggestions**: Always validate AI-generated answers
+        4. **Use Validator Names**: Track who validated each answer for accountability
+        5. **Regular Cleanup**: Monitor RFP statistics and cleanup old data periodically
+        
+        ### Troubleshooting:
+        - **No Questions Found**: Check PDF quality and format
+        - **AI Not Working**: Verify Ollama is running (dev mode) or API keys (prod mode)
+        - **Slow Performance**: Consider reducing batch size or upgrading hardware
+        - **Database Issues**: Use the cleanup tools in sidebar statistics section
+        """)
+
+def show_rfp_manager():
+    """Main RFP Manager interface"""
+    
     # Header with RFP counter
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -714,58 +848,8 @@ def main():
         # Welcome message
         st.info("👆 Select an RFP file from the sidebar to get started")
         
-        # Show instructions
-        st.markdown("""
-        ## 🚀 How to use this RFP Manager:
-        
-        ### 📤 Step 1: Upload RFP Files
-        - **Drag & Drop**: Use the sidebar file uploader to drag PDF files
-        - **Manual**: Add PDF files directly to the `data/new_RFPs/` folder
-        
-        ### 📚 Step 1.5: Build Knowledge Base (Optional)
-        - **Upload Internal Docs**: Use the "Knowledge Base Management" section
-        - **Supported Formats**: .txt, .md, .markdown files or .zip archives
-        - **Auto-Index**: Documents are automatically indexed in vector database
-        
-        ### 📋 Step 2: Process RFP
-        1. **Select**: Choose an RFP PDF from the dropdown
-        2. **Parse**: Click "Parse RFP" to extract questions
-        
-        ### 🤖 Step 2.5: ReAct AI Pre-completion (NEW!)
-        - **Pre-complete**: Click "Pre-complete" to auto-fill answers using ReAct AI
-        - **Intelligent Reasoning**: Uses ReAct (Reasoning + Acting) pattern with Ollama
-        - **Three Smart Tools**: Automatically chooses between Internal Docs + Past RFPs + Web Search
-        - **Context-Aware**: AI decides which tools to use based on question content
-        - **Comments Integration**: AI answers are placed in the Comments column for review
-        - **Smart Yes/No Detection**: Automatically fills Answer column when appropriate
-        
-        ### ✏️ Step 3: Edit & Review
-        - Modify answers and comments in the interactive table
-        - Use dropdown for Yes/No answers
-        - Add custom comments as needed
-        - **NEW**: Enter validator names for each Q&A trio for accountability
-        
-        ### 💾 Step 4: Save & Submit
-        - **Save to Excel**: Export your work to the outputs folder (draft)
-        - **Submit & Index**: Complete workflow with submitter name - saves Excel, indexes Q&A in vector DB with validator info, and archives RFP
-        
-        ### 🔗 Automatic Vector Database Integration
-        - **Smart Indexing**: Each question becomes a searchable vector
-        - **Rich Metadata**: Answers, comments, validator names, submitter info, and completion date stored
-        - **Future AI Enhancement**: Completed RFPs improve future pre-completion accuracy
-        - **Knowledge Accumulation**: Building organizational RFP expertise over time
-        - **Accountability**: Track who validated each Q&A and who submitted the RFP
-        
-        ### 🎯 Key Features:
-        - ✅ **Drag & Drop Upload**: Easy PDF file management
-        - 🤖 **ReAct AI Pre-completion**: Auto-fill answers using intelligent reasoning (NEW!)
-        - 🧠 **Multi-Tool Intelligence**: AI chooses best sources (Docs/RFPs/Web) per question
-        - 📝 **Interactive Editing**: Real-time table editing
-        - � **Validation & Accountability**: Track validator names and submitter info (NEW!)
-        - �📊 **Progress Tracking**: Live statistics and completion percentage
-        - 💾 **Excel Export**: Professional output formatting
-        - 🔄 **Reset**: Start over with original parsed questions
-        """)
+        # Welcome message
+        st.info("👆 Select an RFP file from the main interface to get started")
 
 
 if __name__ == "__main__":
