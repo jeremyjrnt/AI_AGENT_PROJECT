@@ -3,15 +3,19 @@
 venv/
 env/
 ENV/
+.Python
 
 # Environment variables (IMPORTANT: contient vos clés API Qdrant)
 .env
+.env.local
+.env.production
 
 # Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyc
 
 # IDE files
 .vscode/
@@ -19,26 +23,62 @@ __pycache__/
 *.swp
 *.swo
 
-# Data files (optionnel - vos fichiers HTML sont volumineux)
+# Data files et outputs RFP
 data/
 parsed_data.json
+outputs/*.xlsx
+outputs/*.csv
+outputs/~$*.xlsx
+!outputs/.gitkeep
+
+# Qdrant et Vector Data
+qdrant_data/
+*.qdrant
+embeddings/
+*.embeddings
+*.model
+*.pkl
+*.joblib
 
 # OS files
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
 
 # Logs
 *.log
+logs/
 
 # Distribution
 build/
 dist/
 *.egg-info/
+MANIFEST
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
 
 # Jupyter
 .ipynb_checkpoints
+*.ipynb
+
+# Streamlit
+.streamlit/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup
+
+# API Keys and secrets
+secrets.json
+credentials.json
+*.pem
+*.key
