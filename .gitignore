@@ -82,3 +82,24 @@ secrets.json
 credentials.json
 *.pem
 *.key
+
+# Fichiers de test et développement temporaires
+demo_*.py
+test_*.py
+examples_*.py
+explore_*.py
+vectordb_*.py
+list_collections.py
+main_simple.py
+pre-filler.py
+show_completed_rfps.py
+technical_*.py
+test_infrastructure.md
+
+# Dossiers temporaires
+rfp_filler/
+
+# Outils d'inspection temporaires (dans qdrant/)
+qdrant/collection_inspector.py
+qdrant/vectordb_cleaner.py
+qdrant/vectordb_inspect.py
