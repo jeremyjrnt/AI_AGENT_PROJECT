@@ -200,7 +200,7 @@ def submit_completed_rfp(current_file, completed_df, submitter_name=None):
                 indexed_count = index_completed_rfp(str(excel_filepath), rfp_source_info)
                 
             except Exception as e:
-                st.warning(f"⚠️ RFP saved but indexing failed: {e}")
+                st.warning(f"RFP saved but indexing failed: {e}")
         
         # Move original PDF to completed folder
         dest_path = completed_folder / new_filename
@@ -239,7 +239,7 @@ def parse_selected_rfp(selected_file):
 def pre_complete_rfp(current_df, mode="dev"):
     """Pre-complete RFP answers using ReAct-based AI retriever"""
     if ReactRFPRetriever is None or get_qdrant_client is None:
-        st.error("❌ ReAct retriever components not available")
+        st.error("ReAct retriever components not available")
         return current_df
     
     try:
@@ -252,7 +252,7 @@ def pre_complete_rfp(current_df, mode="dev"):
                 
                 # Check if production mode is possible
                 if mode == "prod" and not settings.OPENAI_API_KEY:
-                    st.error("❌ Production mode requires OpenAI API key. Set OPENAI_API_KEY in .env file.")
+                    st.error("Production mode requires OpenAI API key. Set OPENAI_API_KEY in .env file.")
                     return current_df
                 
                 react_retriever = ReactRFPRetriever(client=client, mode=mode)
@@ -276,7 +276,7 @@ def pre_complete_rfp(current_df, mode="dev"):
             # Update progress
             progress = (idx + 1) / total_questions
             progress_bar.progress(progress)
-            status_text.text(f"🤖 ReAct {mode.upper()} processing question {idx + 1}/{total_questions}: {question[:50]}...")
+            status_text.text(f"ReAct {mode.upper()} processing question {idx + 1}/{total_questions}: {question[:50]}...")
             
             try:
                 # Use ReAct to answer the question
@@ -301,24 +301,83 @@ def pre_complete_rfp(current_df, mode="dev"):
                     completed_df.at[idx, 'Answer'] = 'No'
                 
             except Exception as e:
-                st.warning(f"⚠️ Could not process question {idx + 1} with ReAct: {e}")
+                st.warning(f"Could not process question {idx + 1} with ReAct: {e}")
                 continue
         
         progress_bar.progress(1.0)
-        status_text.text(f"✅ ReAct {mode.upper()} pre-completion finished!")
+        status_text.text(f"ReAct {mode.upper()} pre-completion finished!")
         
         return completed_df
         
     except Exception as e:
-        st.error(f"❌ ReAct {mode.upper()} pre-completion failed: {e}")
+        st.error(f"ReAct {mode.upper()} pre-completion failed: {e}")
         return current_df
 
 
 def main():
-    st.set_page_config(page_title="RFP Manager", page_icon="📋", layout="wide")
+    st.set_page_config(
+        page_title="RFP Manager", 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Add custom CSS for professional styling
+    st.markdown("""
+    <style>
+    .main > div {
+        padding-top: 1rem;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        background-color: #f8f9fa;
+        padding: 6px;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 12px 24px;
+        font-weight: 500;
+        border-radius: 6px;
+        color: #495057;
+        border: none;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #e9ecef;
+        color: #495057;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .section-header {
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+    .stButton > button {
+        border-radius: 6px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     # Create main tabs
-    tab1, tab2 = st.tabs(["📋 RFP Manager", "📚 How to Use"])
+    tab1, tab2 = st.tabs(["RFP Manager", "User Guide"])
     
     with tab1:
         show_rfp_manager()
@@ -454,7 +513,7 @@ def show_rfp_manager():
     # Header with RFP counter
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.title("🚀 RFP Question Manager")
+        st.title("RFP Question Manager")
     with col2:
         if get_rfp_tracker is not None:
             try:
@@ -468,7 +527,7 @@ def show_rfp_manager():
     st.markdown("---")
     
     # Sidebar for file management
-    st.sidebar.header("📁 RFP File Management")
+    st.sidebar.header("File Management")
     
     # File upload section for RFPs
     st.sidebar.subheader("📤 Upload New RFPs")
@@ -509,14 +568,14 @@ def show_rfp_manager():
     )
     
     if internal_docs:
-        if st.sidebar.button("🔄 Index Files in Vector DB", type="primary", key="index_files"):
-            with st.spinner("🤖 Indexing files into vector database..."):
+        if st.sidebar.button("Index Files in Vector DB", type="primary", key="index_files"):
+            with st.spinner("Indexing files into vector database..."):
                 indexed_count, processed_files = handle_internal_docs_upload(internal_docs, source_name)
                 
                 if indexed_count > 0:
-                    st.sidebar.success(f"✅ Indexed {indexed_count} documents!")
+                    st.sidebar.success(f"Indexed {indexed_count} documents!")
                     
-                    with st.sidebar.expander("📄 Processed Files", expanded=True):
+                    with st.sidebar.expander("Processed Files", expanded=True):
                         for file_name in processed_files:
                             st.sidebar.write(f"• {file_name}")
                     
@@ -527,7 +586,7 @@ def show_rfp_manager():
     st.sidebar.markdown("---")
     
     # RFP Statistics Section
-    st.sidebar.header("📊 RFP Statistics")
+    st.sidebar.header("RFP Statistics")
     
     if get_rfp_tracker:
         try:
@@ -555,22 +614,22 @@ def show_rfp_manager():
                         st.info("No old documents found")
             
             with col2:
-                if st.button("🔄 Reset Counter", help="Reset RFP counter (use carefully)"):
+                if st.button("Reset Counter", help="Reset RFP counter (use carefully)"):
                     st.session_state.show_reset_dialog = True
             
             # Reset dialog
             if st.session_state.get('show_reset_dialog', False):
-                with st.sidebar.expander("⚠️ Reset RFP Counter", expanded=True):
+                with st.sidebar.expander("Reset RFP Counter", expanded=True):
                     new_value = st.number_input("New counter value", min_value=0, value=0)
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("✅ Confirm Reset"):
+                        if st.button("Confirm Reset"):
                             tracker.reset_counter(new_value)
                             st.success(f"Counter reset to {new_value}")
                             st.session_state.show_reset_dialog = False
                             st.rerun()
                     with col2:
-                        if st.button("❌ Cancel"):
+                        if st.button("Cancel"):
                             st.session_state.show_reset_dialog = False
                             st.rerun()
             
@@ -582,7 +641,7 @@ def show_rfp_manager():
     st.sidebar.markdown("---")
     
     # AI Mode Selection
-    st.sidebar.header("🤖 AI Processing Mode")
+    st.sidebar.header("AI Processing Mode")
     
     # Check if OpenAI key is available for production mode
     openai_available = bool(settings.OPENAI_API_KEY)
@@ -592,7 +651,7 @@ def show_rfp_manager():
             "Select AI Mode",
             options=["dev", "prod"],
             format_func=lambda x: {
-                "dev": "🛠️ Development (Free Ollama)",
+                "dev": "Development (Free Ollama)",
                 "prod": "🚀 Production (OpenAI)"
             }[x],
             help="Dev mode uses free local Ollama models. Prod mode uses OpenAI for better quality.",
@@ -600,7 +659,7 @@ def show_rfp_manager():
         )
     else:
         ai_mode = "dev"
-        st.sidebar.info("🛠️ Development Mode Only\n\nSet OPENAI_API_KEY in .env to enable production mode with OpenAI.")
+        st.sidebar.info("Development Mode Only\n\nSet OPENAI_API_KEY in .env to enable production mode with OpenAI.")
     
     # Store AI mode in session state
     st.session_state.ai_mode = ai_mode
@@ -609,7 +668,7 @@ def show_rfp_manager():
     
     # RFP Statistics Section
     if get_rfp_tracker is not None:
-        st.sidebar.header("📊 RFP Statistics")
+        st.sidebar.header("RFP Statistics")
         
         try:
             tracker = get_rfp_tracker()
@@ -623,26 +682,26 @@ def show_rfp_manager():
                 st.metric("Total Processed", stats['total_rfps_processed'])
             
             # Cleanup settings
-            st.sidebar.write(f"🧹 Cleanup: {'✅ Enabled' if stats['cleanup_enabled'] else '❌ Disabled'}")
+            st.sidebar.write(f"Cleanup: {'✅ Enabled' if stats['cleanup_enabled'] else '❌ Disabled'}")
             st.sidebar.write(f"⏰ Max Age: {stats['max_age_difference']} RFPs")
             
             # Management buttons
-            if st.sidebar.button("🔍 Inspect Collection", help="View RFP age distribution"):
-                with st.spinner("🔍 Inspecting RFP collection..."):
+            if st.sidebar.button("Inspect Collection", help="View RFP age distribution"):
+                with st.spinner("Inspecting RFP collection..."):
                     # This could be expanded to show results in main area
                     st.sidebar.success("Check terminal for detailed analysis")
             
-            if st.sidebar.button("🧹 Force Cleanup", help="Remove old RFP documents"):
+            if st.sidebar.button("Force Cleanup", help="Remove old RFP documents"):
                 with st.spinner("🧹 Cleaning up old RFPs..."):
                     cleanup_count = tracker.cleanup_old_rfps(force=True)
                     if cleanup_count > 0:
                         st.sidebar.success(f"✅ Cleaned {cleanup_count} documents")
                     else:
-                        st.sidebar.info("📝 No cleanup needed")
+                        st.sidebar.info("No cleanup needed")
                     st.rerun()
             
         except Exception as e:
-            st.sidebar.error(f"⚠️ RFP Stats Error: {e}")
+            st.sidebar.error(f"RFP Stats Error: {e}")
     
     st.sidebar.markdown("---")
     
@@ -657,18 +716,18 @@ def show_rfp_manager():
         pass
     
     # Main content area - RFP Selection and Processing
-    st.header("📋 RFP Processing Workflow")
+    st.header("RFP Processing Workflow")
     
     # Step 1: RFP File Selection
     if not rfp_files:
         st.warning("🚫 No RFP files found. Please upload PDF files using the sidebar.")
-        st.info("💡 Use the **📤 Upload New RFPs** section in the sidebar to add PDF files.")
+        st.info("Use the **Upload New RFPs** section in the sidebar to add PDF files.")
     else:
         # RFP File Selection in main body
         col1, col2 = st.columns([3, 1])
         
         with col1:
-            st.subheader("🎯 Step 1: Select RFP File")
+            st.subheader("Step 1: Select RFP File")
             selected_file = st.selectbox(
                 "Choose an RFP PDF file to process:",
                 options=rfp_files,
@@ -679,7 +738,7 @@ def show_rfp_manager():
         with col2:
             st.subheader("🚀 Step 2: Parse")
             if st.button("📖 Parse RFP", type="primary", use_container_width=True):
-                with st.spinner("🔍 Parsing RFP file..."):
+                with st.spinner("Parsing RFP file..."):
                     df = parse_selected_rfp(selected_file)
                     
                     if df is not None:
@@ -694,11 +753,11 @@ def show_rfp_manager():
     
     # Step 3: Editing Interface (only shown after parsing)
     if 'rfp_data' in st.session_state:
-        st.header(f"✏️ Step 3: Edit Questions & Answers")
-        st.subheader(f"📄 Current File: {st.session_state.current_file}")
+        st.header(f"Step 3: Edit Questions & Answers")
+        st.subheader(f"Current File: {st.session_state.current_file}")
         
         # Display editable table
-        st.markdown("### 📝 Questions, Answers & Comments")
+        st.markdown("### Questions, Answers & Comments")
         
         # Create editable data editor
         edited_df = st.data_editor(
@@ -736,7 +795,7 @@ def show_rfp_manager():
         st.session_state.rfp_data = edited_df
         
         # Action buttons
-        st.markdown("### 🎛️ Actions")
+        st.markdown("### Actions")
         
         # First row of buttons
         col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
@@ -744,9 +803,9 @@ def show_rfp_manager():
         with col1:
             # Get current AI mode
             current_mode = getattr(st.session_state, 'ai_mode', 'dev')
-            mode_emoji = "🛠️" if current_mode == "dev" else "🚀"
+            mode_label = "Development" if current_mode == "dev" else "Production"
             
-            if st.button(f"{mode_emoji} Pre-complete", type="primary", help=f"Auto-fill answers using ReAct AI in {current_mode.upper()} mode (Internal Docs + RFP History + Web Search)"):
+            if st.button(f"Pre-complete ({mode_label})", type="primary", help=f"Auto-fill answers using ReAct AI in {current_mode.upper()} mode (Internal Docs + RFP History + Web Search)"):
                 with st.spinner(f"🤖 Pre-completing RFP using ReAct AI in {current_mode.upper()} mode..."):
                     completed_df = pre_complete_rfp(edited_df, current_mode)
                     st.session_state.rfp_data = completed_df
@@ -785,7 +844,7 @@ def show_rfp_manager():
             
             if st.button("✅ Submit & Index", type="primary", help="Complete RFP: Save, Index in Vector DB, and Archive"):
                 if not submitter_name or not submitter_name.strip():
-                    st.error("⚠️ Please enter the submitter name before submitting")
+                    st.error("Please enter the submitter name before submitting")
                 else:
                     with st.spinner("🚀 Submitting RFP and indexing in vector database..."):
                         success, result, excel_file, indexed_count = submit_completed_rfp(
@@ -798,7 +857,7 @@ def show_rfp_manager():
                             ✅ **RFP Successfully Submitted!**
                             
                             👤 **Submitted by**: {submitter_name.strip()}
-                            📁 **Archived as**: {result}
+                            📁**Archived as**: {result}
                             💾 **Excel saved**: {excel_file}
                             🔗 **Vector DB indexed**: {indexed_count} Q&A pairs
                             
@@ -834,7 +893,7 @@ def show_rfp_manager():
                 unanswered = len(edited_df[edited_df['Answer'] == ''])
                 
                 st.info(f"""
-                📈 **Statistics:**
+                📈**Statistics:**
                 - Total Questions: {total_questions}
                 - Answered 'Yes': {answered_yes}
                 - Answered 'No': {answered_no}
