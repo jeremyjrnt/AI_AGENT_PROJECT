@@ -418,6 +418,64 @@ Return valid JSON array only. No markdown, no explanations."""
         if not text:
             raise ValueError("PDF appears empty or unreadable.")
         return self.extract_and_export(text, excel_name)
+    
+    def parse_excel(self, excel_path: str) -> List[Dict]:
+        """
+        Parse existing Excel RFP file to extract Q&A pairs.
+        
+        Args:
+            excel_path: Path to existing Excel RFP file
+            
+        Returns:
+            List[Dict]: List of Q&A pairs with question, answer, category etc.
+        """
+        try:
+            df = pd.read_excel(excel_path)
+            qa_pairs = []
+            
+            # Try to find question and answer columns (flexible matching)
+            question_cols = [col for col in df.columns if 'question' in col.lower()]
+            answer_cols = [col for col in df.columns if 'answer' in col.lower() or 'response' in col.lower()]
+            
+            if not question_cols:
+                print("⚠️  No question column found, trying first column")
+                question_col = df.columns[0] if len(df.columns) > 0 else None
+            else:
+                question_col = question_cols[0]
+                
+            if not answer_cols:
+                print("⚠️  No answer column found, trying second column")  
+                answer_col = df.columns[1] if len(df.columns) > 1 else None
+            else:
+                answer_col = answer_cols[0]
+            
+            if not question_col:
+                print("❌ Cannot identify question column")
+                return []
+            
+            print(f"📋 Using columns - Question: '{question_col}', Answer: '{answer_col or 'None'}'")
+            
+            for index, row in df.iterrows():
+                question = str(row.get(question_col, '')).strip()
+                answer = str(row.get(answer_col, '')) if answer_col else ''
+                
+                if question and question.lower() not in ['nan', 'none', '']:
+                    qa_pair = {
+                        'question': question,
+                        'answer': answer.strip(),
+                        'question_number': index + 1,
+                        'category': str(row.get('Category', row.get('category', 'General'))),
+                        'source_file': Path(excel_path).name,
+                        'extracted_at': datetime.now().isoformat()
+                    }
+                    qa_pairs.append(qa_pair)
+            
+            print(f"✅ Extracted {len(qa_pairs)} Q&A pairs from Excel")
+            return qa_pairs
+            
+        except Exception as e:
+            print(f"❌ Error parsing Excel file: {e}")
+            return []
 
 
 # Backward compatibility functions (using dev mode by default)

@@ -27,9 +27,20 @@ EMBEDDING_PROVIDER = os.getenv('EMBEDDING_PROVIDER', 'huggingface')  # "huggingf
 # HuggingFace Embedding Settings (default/free)
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
 
-# OpenAI Embedding Settings (premium)
+# OpenAI Settings (Standard et Azure)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', None)
 OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large')
+
+# Azure OpenAI Settings
+AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY', None)
+AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT', None)
+AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-01')
+AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv('AZURE_OPENAI_CHAT_DEPLOYMENT', 'team11-gpt4o')
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT', 'team11-embedding')
+
+# Ollama Settings
+OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5:0.5b')
 
 # Vector Database Settings
 VECTOR_SIZE = 384  # Default for all-MiniLM-L6-v2, will be auto-detected
@@ -58,6 +69,18 @@ def get_default_vector_size() -> int:
         else:
             return 384  # Default HuggingFace size
 
+def is_azure_openai_configured() -> bool:
+    """Check if Azure OpenAI is properly configured"""
+    return bool(AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT)
+
+def is_openai_configured() -> bool:
+    """Check if OpenAI (standard) is configured"""
+    return bool(OPENAI_API_KEY)
+
+def is_ollama_configured() -> bool:
+    """Check if Ollama is configured"""
+    return bool(OLLAMA_BASE_URL and OLLAMA_MODEL)
+
 def is_openai_provider() -> bool:
     """Check if using OpenAI as embedding provider"""
     return EMBEDDING_PROVIDER.lower() == 'openai'
@@ -65,6 +88,31 @@ def is_openai_provider() -> bool:
 def is_huggingface_provider() -> bool:
     """Check if using HuggingFace as embedding provider"""
     return EMBEDDING_PROVIDER.lower() == 'huggingface'
+
+def get_preferred_openai_config():
+    """
+    Get preferred OpenAI configuration (Azure first, then standard)
+    
+    Returns:
+        dict: Configuration for OpenAI client
+    """
+    if is_azure_openai_configured():
+        return {
+            'type': 'azure',
+            'api_key': AZURE_OPENAI_API_KEY,
+            'endpoint': AZURE_OPENAI_ENDPOINT,
+            'api_version': AZURE_OPENAI_API_VERSION,
+            'chat_deployment': AZURE_OPENAI_CHAT_DEPLOYMENT,
+            'embedding_deployment': AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+        }
+    elif is_openai_configured():
+        return {
+            'type': 'openai',
+            'api_key': OPENAI_API_KEY,
+            'model': OPENAI_EMBEDDING_MODEL
+        }
+    else:
+        return None
 
 # Retrieval Settings
 DEFAULT_TOP_K = 5

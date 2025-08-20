@@ -16,9 +16,10 @@ HTML_EXTS = {".html", ".htm"}
 
 class InternalParser:
     """
-    Internal document parser with Dev/Prod mode support
+    Internal document parser with Dev/Prod/Hybrid mode support
     Dev Mode: Basic text extraction and chunking
-    Prod Mode: Enhanced processing with LLM-based text improvement
+    Prod Mode: Enhanced processing with LLM-based text improvement (replaces original)
+    Hybrid Mode: Keeps original text + adds LLM enhancements in metadata
     """
     
     def __init__(self, mode="dev", model=None):
@@ -26,7 +27,8 @@ class InternalParser:
         Initialize parser with mode selection
         
         Args:
-            mode: "dev" for basic parsing or "prod" for LLM-enhanced parsing
+            mode: "dev" for basic parsing, "prod" for LLM-enhanced parsing, 
+                  "hybrid" for original text + LLM metadata
             model: LLM model to use (auto-selected based on mode if None)
         """
         self.mode = mode.lower()
@@ -35,22 +37,43 @@ class InternalParser:
         if model is None:
             if self.mode == "prod":
                 self.model = "gpt-4o-mini"  # Fast and cost-effective for production
+            elif self.mode == "hybrid":
+                self.model = "qwen2.5:0.5b"  # Default Qwen model for hybrid mode (ultra-light and fast)
             else:
                 self.model = None  # No LLM needed in dev mode
         else:
             self.model = model
         
-        # Initialize LLM for production mode
-        if self.mode == "prod":
+        # Initialize LLM for production or hybrid modes
+        if self.mode in ["prod", "hybrid"]:
             self._initialize_llm()
         
         print(f"📄 InternalParser initialized in {self.mode.upper()} mode")
     
     def _initialize_llm(self):
-        """Initialize LLM for production mode text enhancement"""
+        """Initialize LLM for production or hybrid mode text enhancement"""
         try:
+            # For hybrid mode with Qwen, use Ollama
+            if self.mode == "hybrid" and "qwen" in self.model.lower():
+                try:
+                    from langchain_ollama import ChatOllama
+                    
+                    self.llm = ChatOllama(
+                        model=self.model,
+                        temperature=0.1,
+                        base_url="http://localhost:11434"  # Default Ollama URL
+                    )
+                    print(f"🤖 Hybrid Mode: Using Ollama model {self.model} for text enhancement")
+                    return
+                except ImportError:
+                    print("⚠️ langchain_ollama not installed. Install with: pip install langchain-ollama")
+                    self.mode = "dev"
+                    self.llm = None
+                    return
+            
+            # For production mode or OpenAI models, use OpenAI
             if not settings.OPENAI_API_KEY:
-                print("⚠️ OpenAI API key not found. Falling back to dev mode.")
+                print(f"⚠️ OpenAI API key not found. Falling back to dev mode.")
                 self.mode = "dev"
                 self.llm = None
                 return
@@ -62,10 +85,10 @@ class InternalParser:
                 temperature=0.1,
                 api_key=settings.OPENAI_API_KEY
             )
-            print(f"🚀 Production Mode: Using OpenAI model {self.model} for text enhancement")
+            print(f"🚀 {self.mode.title()} Mode: Using OpenAI model {self.model} for text enhancement")
             
         except ImportError:
-            print("⚠️ langchain_openai not installed. Falling back to dev mode.")
+            print("⚠️ Required LangChain packages not installed. Falling back to dev mode.")
             self.mode = "dev"
             self.llm = None
         except Exception as e:
@@ -75,7 +98,7 @@ class InternalParser:
     
     def _enhance_text_with_llm(self, raw_text: str, title: Optional[str] = None) -> Dict[str, str]:
         """
-        Enhance extracted text using LLM (Production mode only)
+        Enhance extracted text using LLM (Production/Hybrid mode only)
         
         Args:
             raw_text: Raw extracted text
@@ -84,25 +107,30 @@ class InternalParser:
         Returns:
             Dict with enhanced text and metadata
         """
-        if self.mode != "prod" or not hasattr(self, 'llm') or self.llm is None:
+        if self.mode not in ["prod", "hybrid"] or not hasattr(self, 'llm') or self.llm is None:
             return {"enhanced_text": raw_text, "summary": "", "key_topics": ""}
         
         try:
+            # Use consistent English prompt for all modes with emphasis on longer enhanced text
             prompt = f"""
-You are processing internal company documentation for better searchability and understanding.
+You are an expert document processor improving internal company documentation for better searchability.
 
 Document Title: {title or "Unknown"}
-Raw Text: {raw_text[:2000]}...
+Raw Text Content: {raw_text[:2000]}...
 
-Tasks:
-1. Clean and improve the text formatting
-2. Create a brief summary (2-3 sentences)
-3. Identify key topics/keywords (comma-separated)
+INSTRUCTIONS:
+1. ENHANCED_TEXT: Create a comprehensive, well-structured version of the original text. This should be the LONGEST field with 6-10 sentences minimum. Include all key details, technical information, and context from the original text. Improve readability while preserving all important information.
+
+2. SUMMARY: Create a brief executive summary in 2-3 sentences maximum.
+
+3. KEY_TOPICS: List main topics and keywords (comma-separated).
+
+CRITICAL: The enhanced_text MUST be significantly longer than the summary. Aim for 300-500+ characters for enhanced_text.
 
 Respond in JSON format:
 {{
-    "enhanced_text": "cleaned and improved text",
-    "summary": "brief summary of the content",
+    "enhanced_text": "comprehensive detailed text with all key information, technical details, context, and improved structure - minimum 6-10 sentences covering all aspects of the original content",
+    "summary": "brief executive summary maximum 2-3 sentences",
     "key_topics": "topic1, topic2, topic3"
 }}
 """
@@ -112,15 +140,132 @@ Respond in JSON format:
             # Try to parse JSON response
             try:
                 import json
-                result = json.loads(response.content)
+                
+                # Clean the response content (remove markdown code blocks if present)
+                content = response.content.strip()
+                if content.startswith("```json"):
+                    content = content[7:]  # Remove ```json
+                if content.endswith("```"):
+                    content = content[:-3]  # Remove closing ```
+                content = content.strip()
+                
+                # Try to extract JSON from mixed content
+                if not content.startswith('{'):
+                    # Look for JSON pattern in the response
+                    import re
+                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if json_match:
+                        content = json_match.group()
+                    else:
+                        # No JSON found, treat as plain text response
+                        raise json.JSONDecodeError("No JSON pattern found", content, 0)
+                
+                result = json.loads(content)
+                
+                # Extract and validate fields
+                enhanced_text = result.get("enhanced_text", "")
+                summary = result.get("summary", "")
+                key_topics = result.get("key_topics", "")
+                
+                # Check if fields seem to be swapped or contain template text
+                if ("minimum 6-10 sentences" in enhanced_text or 
+                    "comprehensive detailed text" in enhanced_text or
+                    len(enhanced_text) < 50):
+                    # Fields might be swapped or malformed, try to fix
+                    if len(summary) > len(enhanced_text) and "minimum" not in summary:
+                        # Swap them
+                        enhanced_text, summary = summary, enhanced_text
+                
+                # Final validation and fallback
+                if len(enhanced_text) < 50 or "minimum 6-10 sentences" in enhanced_text:
+                    # Create a proper enhanced text from raw_text
+                    sentences = raw_text.split('. ')
+                    if len(sentences) >= 3:
+                        enhanced_text = '. '.join(sentences[:6]) + '.'  # Take first 6 sentences
+                    else:
+                        enhanced_text = raw_text[:400] + "..."  # Take first 400 chars
+                
+                # Ensure summary is shorter than enhanced_text
+                if len(summary) >= len(enhanced_text):
+                    # Create a proper summary
+                    words = enhanced_text.split()
+                    if len(words) > 20:
+                        summary = ' '.join(words[:20]) + "..."
+                    else:
+                        summary = enhanced_text[:100] + "..."
+                
                 return {
-                    "enhanced_text": result.get("enhanced_text", raw_text),
-                    "summary": result.get("summary", ""),
-                    "key_topics": result.get("key_topics", "")
+                    "enhanced_text": enhanced_text,
+                    "summary": summary,
+                    "key_topics": key_topics
                 }
-            except json.JSONDecodeError:
-                # Fallback if JSON parsing fails
-                return {"enhanced_text": raw_text, "summary": "", "key_topics": ""}
+                
+            except json.JSONDecodeError as e:
+                # Fallback: treat response as plain text and create structured output
+                print(f"⚠️ JSON parsing failed, using plain text fallback: {str(e)[:50]}...")
+                
+                # Use the raw response as enhanced text if it's substantial
+                raw_response = response.content.strip()
+                
+                # Clean up common patterns from failed responses
+                if "Enhanced Text:" in raw_response:
+                    # Try to extract structured info from plain text response
+                    lines = raw_response.split('\n')
+                    enhanced_text = ""
+                    summary = ""
+                    key_topics = ""
+                    
+                    current_section = None
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith("Enhanced Text:") or "enhanced_text" in line.lower():
+                            current_section = "enhanced"
+                            enhanced_text += line.replace("Enhanced Text:", "").strip() + " "
+                        elif line.startswith("Summary:") or "summary" in line.lower():
+                            current_section = "summary"
+                            summary += line.replace("Summary:", "").strip() + " "
+                        elif line.startswith("Key Topics:") or "key_topics" in line.lower():
+                            current_section = "topics"
+                            key_topics += line.replace("Key Topics:", "").strip() + " "
+                        elif current_section == "enhanced" and line:
+                            enhanced_text += line + " "
+                        elif current_section == "summary" and line:
+                            summary += line + " "
+                        elif current_section == "topics" and line:
+                            key_topics += line + " "
+                    
+                    enhanced_text = enhanced_text.strip()
+                    summary = summary.strip()
+                    key_topics = key_topics.strip()
+                else:
+                    # Use raw response as enhanced text
+                    enhanced_text = raw_response[:800] if len(raw_response) > 800 else raw_response
+                
+                # Generate proper enhanced text from raw_text if response is poor
+                if len(enhanced_text) < 100:
+                    sentences = raw_text.split('. ')
+                    if len(sentences) >= 4:
+                        enhanced_text = '. '.join(sentences[:8]) + '.'  # Take first 8 sentences
+                    else:
+                        enhanced_text = raw_text[:600] + "..."  # Take first 600 chars
+                
+                # Create shorter summary if needed
+                if not summary or len(summary) >= len(enhanced_text):
+                    summary_words = enhanced_text.split()[:20]
+                    summary = ' '.join(summary_words) + "..."
+                
+                # Create key topics if missing
+                if not key_topics:
+                    # Extract key words from title and enhanced text
+                    import re
+                    words = re.findall(r'\b[A-Z][a-z]+\b', (title or "") + " " + enhanced_text)
+                    key_topics = ", ".join(list(dict.fromkeys(words))[:5])  # Remove duplicates, take first 5
+                
+                return {
+                    "enhanced_text": enhanced_text,
+                    "summary": summary,
+                    "key_topics": key_topics
+                }
                 
         except Exception as e:
             print(f"⚠️ LLM enhancement failed: {e}")
@@ -145,22 +290,30 @@ Respond in JSON format:
             if not raw_text:
                 return []
             
-            # Enhance text in production mode
-            if self.mode == "prod":
+            # Enhance text based on mode
+            if self.mode in ["prod", "hybrid"]:
                 enhancement_result = self._enhance_text_with_llm(raw_text, title)
-                processed_text = enhancement_result["enhanced_text"]
+                enhanced_text = enhancement_result["enhanced_text"]
                 summary = enhancement_result["summary"]
                 key_topics = enhancement_result["key_topics"]
             else:
-                processed_text = raw_text
+                enhanced_text = ""
                 summary = ""
                 key_topics = ""
+            
+            # Choose text for chunking based on mode
+            if self.mode == "prod":
+                # Production mode: use enhanced text for chunking
+                text_for_chunking = enhanced_text if enhanced_text else raw_text
+            else:
+                # Dev and Hybrid modes: always use original text for chunking
+                text_for_chunking = raw_text
             
             # Create chunks
             chunks = []
             doc_id = _hash(str(file_path))
             
-            for i, chunk_text in enumerate(_split_text(processed_text, target_chars, overlap)):
+            for i, chunk_text in enumerate(_split_text(text_for_chunking, target_chars, overlap)):
                 chunk_id = _hash(f"{doc_id}_{i}_{chunk_text[:50]}")
                 
                 chunk_data = {
@@ -171,21 +324,30 @@ Respond in JSON format:
                     "source": "internal",
                     "processing_mode": self.mode,
                     "metadata": {
-                        "file_name": file_path.name,
-                        "file_path": str(file_path)
+                        "file": {
+                            "name": file_path.name,
+                            "path": str(file_path)
+                        }
                     }
                 }
                 
-                # Add production mode enhancements
+                # Add mode-specific enhancements
                 if self.mode == "prod":
-                    chunk_data["metadata"].update({
+                    chunk_data["metadata"]["llm"] = {
+                        "model": self.model,
+                        "enhanced_with_llm": True,
+                        "summary": summary,
+                        "key_topics": key_topics
+                    }
+                elif self.mode == "hybrid":
+                    chunk_data["metadata"]["llm"] = {
+                        "model": self.model,
+                        "enhanced_with_llm": True,
+                        "enhanced_text": enhanced_text,  # Full enhanced text (not chunked)
                         "summary": summary,
                         "key_topics": key_topics,
-                        "enhanced_with_llm": True,
-                        "llm_model": self.model
-                    })
-                else:
-                    chunk_data["metadata"]["enhanced_with_llm"] = False
+                        "is_hybrid_mode": True
+                    }
                 
                 chunks.append(chunk_data)
             
@@ -235,7 +397,7 @@ Respond in JSON format:
             all_chunks.extend(chunks)
             
             if chunks:
-                mode_indicator = "🚀" if self.mode == "prod" else "🛠️"
+                mode_indicator = "🤖" if self.mode == "hybrid" else "🚀" if self.mode == "prod" else "🛠️"
                 print(f"   {mode_indicator} {len(chunks)} chunks ({self.mode} mode)")
         
         print(f"\n✅ Total: {len(all_chunks)} chunks extraits en mode {self.mode.upper()}")
@@ -284,7 +446,7 @@ def parse_html_file(file_path: Path, target_chars: int = 1200, overlap: int = 20
     parser = InternalParser(mode="dev")
     return parser.parse_html_file(file_path, target_chars, overlap)
 
-def parse_folder_to_data(folder_path: Union[str, Path], target_chars: int = 1200, overlap: int = 200, mode: str = "dev") -> List[Dict[str, Any]]:
+def parse_folder_to_data(folder_path: Union[str, Path], target_chars: int = 1200, overlap: int = 200, mode: str = "dev", model: str = None) -> List[Dict[str, Any]]:
     """
     Parse all HTML files in folder and return chunks
     
@@ -292,9 +454,10 @@ def parse_folder_to_data(folder_path: Union[str, Path], target_chars: int = 1200
         folder_path: Path to folder containing HTML files
         target_chars: Target characters per chunk
         overlap: Overlap between chunks
-        mode: Processing mode ("dev" or "prod")
+        mode: Processing mode ("dev", "prod", or "hybrid")
+        model: Specific model to use (optional)
     """
-    parser = InternalParser(mode=mode)
+    parser = InternalParser(mode=mode, model=model)
     return parser.parse_folder_to_data(folder_path, target_chars, overlap)
 
 def save_parsed_data(data: List[Dict[str, Any]], output_file: str = "parsed_data.json") -> bool:
@@ -312,10 +475,10 @@ def save_parsed_data(data: List[Dict[str, Any]], output_file: str = "parsed_data
         return False
 
 
-# Test function for both modes
+# Test function for all modes
 def test_parser_modes():
-    """Test both dev and prod modes"""
-    print("🧪 Testing Internal Parser - Both Modes")
+    """Test dev, prod, and hybrid modes"""
+    print("🧪 Testing Internal Parser - All Modes")
     print("=" * 50)
     
     # Test with a sample folder (you'll need to adjust the path)
@@ -330,6 +493,11 @@ def test_parser_modes():
     dev_parser = InternalParser(mode="dev")
     dev_chunks = dev_parser.parse_folder_to_data(test_folder)
     
+    print("\n🤖 HYBRID MODE TEST (Qwen + Ollama)")
+    print("-" * 30)
+    hybrid_parser = InternalParser(mode="hybrid", model="qwen2.5:0.5b")
+    hybrid_chunks = hybrid_parser.parse_folder_to_data(test_folder)
+    
     if settings.OPENAI_API_KEY:
         print("\n🚀 PRODUCTION MODE TEST")
         print("-" * 30)
@@ -340,6 +508,10 @@ def test_parser_modes():
         print("Set OPENAI_API_KEY in .env to test production mode")
     
     print("\n🎉 Mode comparison test complete!")
+    print("📊 Results Summary:")
+    print(f"   Dev chunks: {len(dev_chunks) if 'dev_chunks' in locals() else 0}")
+    print(f"   Hybrid chunks: {len(hybrid_chunks) if 'hybrid_chunks' in locals() else 0}")
+    print(f"   Prod chunks: {len(prod_chunks) if 'prod_chunks' in locals() else 0}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,31 @@
+{
+  "sessions": [
+    {
+      "timestamp": "2025-08-20T11:49:30.651818",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 17,
+      "estimated_tokens": 4,
+      "estimated_cost_usd": 5.2e-07,
+      "texts_preview": [
+        "Eden est gentille"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:49:30.652090",
+      "provider": "huggingface",
+      "model": "all-MiniLM-L6-v2",
+      "num_texts": 3,
+      "total_characters": 18,
+      "estimated_tokens": 4,
+      "estimated_cost_usd": 0.0,
+      "texts_preview": [
+        "Test 1",
+        "Test 2"
+      ]
+    }
+  ],
+  "total_tokens": 8,
+  "total_requests": 2
+}

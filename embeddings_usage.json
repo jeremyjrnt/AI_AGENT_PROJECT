@@ -1,0 +1,209 @@
+{
+  "sessions": [
+    {
+      "timestamp": "2025-08-20T11:50:15.125243",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 17,
+      "estimated_tokens": 4,
+      "estimated_cost_usd": 5.2e-07,
+      "texts_preview": [
+        "Eden est gentille"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:50:15.874467",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 108,
+      "estimated_tokens": 27,
+      "estimated_cost_usd": 3.51e-06,
+      "texts_preview": [
+        "Voici un texte plus long pour tester la consommation de tokens et le coût estimé des embeddings Azure OpenAI"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:50:16.073392",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 5,
+      "estimated_tokens": 1,
+      "estimated_cost_usd": 1.3e-07,
+      "texts_preview": [
+        "Court"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:50:16.253586",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 10,
+      "estimated_tokens": 2,
+      "estimated_cost_usd": 2.6e-07,
+      "texts_preview": [
+        "Test final"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:57:11.033860",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T11:58:48.816428",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:00:46.515556",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:15:56.131174",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 2037,
+      "estimated_tokens": 509,
+      "estimated_cost_usd": 6.617e-05,
+      "texts_preview": [
+        "API Service Integrations | Okta Classic Engine Skip To Main Content Account Settings Logout placeholder Account Settings Logout Filter: All Files Submit Search oktaproduction9ounvcxa https://platform.cloud.coveo.com/rest/search https://support.okta.com/help/s/global-search/%40uri https://support.okta.com/help/services/apexrest/PublicSearchToken?site=help oktanonproduction1il1gtac7 https://qo2dt8ecve.execute-api.us-west-2.amazonaws.com/dev/token?site=help Documentation Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Release notes Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Okta Developer Auth0 Training Support API Service Integrations API Service Integrations allow third-party apps to access the Core Okta API . Other names for these integrations include service-to-service and machine-to-machine integrations. These integrations use OAuth 2.0 to access the API, which is more secure than using API tokens. Okta attributes API calls made by the integration to the app, not to a user. The integration can access or modify resources like system logs, apps, sessions, and policies. For example, API Service Integrations enable applications to: Access Okta system log entries for analysis Send risk signals to Okta Sync Okta user profile information to another system If you want to build an API Service Integration, see API service integrations in the OIN",
+        "s, sessions, and policies. For example, API Service Integrations enable applications to: Access Okta system log entries for analysis Send risk signals to Okta Sync Okta user profile information to another system If you want to build an API Service Integration, see API service integrations in the OIN . Related topics Add an API Service Integration Rotate a Client Secret for an API Service Integration Revoke an API Service Integration © 2025 Okta, Inc . All Rights Reserved. Various trademarks held by their respective owners. Feedback"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:45:39.216523",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 2944,
+      "estimated_tokens": 736,
+      "estimated_cost_usd": 9.568e-05,
+      "texts_preview": [
+        "Administrator Dashboard | Okta Classic Engine Skip To Main Content Account Settings Logout placeholder Account Settings Logout Filter: All Files Submit Search oktaproduction9ounvcxa https://platform.cloud.coveo.com/rest/search https://support.okta.com/help/s/global-search/%40uri https://support.okta.com/help/services/apexrest/PublicSearchToken?site=help oktanonproduction1il1gtac7 https://qo2dt8ecve.execute-api.us-west-2.amazonaws.com/dev/token?site=help Documentation Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Release notes Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Okta Developer Auth0 Training Support Administrator Dashboard The Okta Admin Dashboard summarizes org usage and activity and notifies you of any problems or outstanding work to be completed. The navigation panel on the side provides shortcuts to the most commonly performed tasks. When you select an option from the navigation panel, the option is highlighted. You can also collapse and expand the top bar and the navigation panel as required. The top bar contains these items: Help : Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administra",
+        ": Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administrative best practices. You can also do the following tasks: Task Description View your org at a glance The number of active users, groups, and SSO apps in your org and a summary of org changes by all admins. View your org agents' status The operational status of org agents. View Okta service status The operational status of the Okta service. Monitor your tasks The issues in your org that require attention. Monitor your org's security Your org's metrics and user-reported suspicious activity metrics. Monitor your apps The number of user sign-ins across your org's apps over time. Monitor your org's rate limits Your org's rate limit warnings and violations metrics and tasks. Get started Super admins can view a Get Started with Okta page, which provides a way for new admins to learn the basics, build up their organization, and explore more Okta features. Get Started with Okta is a useful route for setting up your Okta integration. An icon is shown when you have completed an important setup task. For details, see Get started with Okta . © 2025 Okta, Inc . All Rights Reserved. Various trademarks held by their respective owners. Feedback"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:49:26.518381",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 2944,
+      "estimated_tokens": 736,
+      "estimated_cost_usd": 9.568e-05,
+      "texts_preview": [
+        "Administrator Dashboard | Okta Classic Engine Skip To Main Content Account Settings Logout placeholder Account Settings Logout Filter: All Files Submit Search oktaproduction9ounvcxa https://platform.cloud.coveo.com/rest/search https://support.okta.com/help/s/global-search/%40uri https://support.okta.com/help/services/apexrest/PublicSearchToken?site=help oktanonproduction1il1gtac7 https://qo2dt8ecve.execute-api.us-west-2.amazonaws.com/dev/token?site=help Documentation Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Release notes Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Okta Developer Auth0 Training Support Administrator Dashboard The Okta Admin Dashboard summarizes org usage and activity and notifies you of any problems or outstanding work to be completed. The navigation panel on the side provides shortcuts to the most commonly performed tasks. When you select an option from the navigation panel, the option is highlighted. You can also collapse and expand the top bar and the navigation panel as required. The top bar contains these items: Help : Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administra",
+        ": Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administrative best practices. You can also do the following tasks: Task Description View your org at a glance The number of active users, groups, and SSO apps in your org and a summary of org changes by all admins. View your org agents' status The operational status of org agents. View Okta service status The operational status of the Okta service. Monitor your tasks The issues in your org that require attention. Monitor your org's security Your org's metrics and user-reported suspicious activity metrics. Monitor your apps The number of user sign-ins across your org's apps over time. Monitor your org's rate limits Your org's rate limit warnings and violations metrics and tasks. Get started Super admins can view a Get Started with Okta page, which provides a way for new admins to learn the basics, build up their organization, and explore more Okta features. Get Started with Okta is a useful route for setting up your Okta integration. An icon is shown when you have completed an important setup task. For details, see Get started with Okta . © 2025 Okta, Inc . All Rights Reserved. Various trademarks held by their respective owners. Feedback"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:50:24.660453",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 820,
+      "estimated_tokens": 205,
+      "estimated_cost_usd": 2.665e-05,
+      "texts_preview": [
+        "The Okta Admin Dashboard provides a comprehensive overview of your organization's usage and activity. It offers shortcuts to commonly performed tasks, including account settings, logout, search functionality, and more. The navigation panel on the side allows you to quickly access most frequently used options. You can also collapse and expand the top bar and navigation panel as needed for better readability.",
+        "The Okta Admin Dashboard provides a comprehensive overview of your organization's usage and activity. It offers shortcuts to commonly performed tasks, including account settings, logout, search functionality, and more. The navigation panel on the side allows you to quickly access most frequently used options. You can also collapse and expand the top bar and navigation panel as needed for better readability."
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:52:34.906096",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 5290,
+      "estimated_tokens": 1322,
+      "estimated_cost_usd": 0.00017186,
+      "texts_preview": [
+        "Administrator Dashboard | Okta Classic Engine Skip To Main Content Account Settings Logout placeholder Account Settings Logout Filter: All Files Submit Search oktaproduction9ounvcxa https://platform.cloud.coveo.com/rest/search https://support.okta.com/help/s/global-search/%40uri https://support.okta.com/help/services/apexrest/PublicSearchToken?site=help oktanonproduction1il1gtac7 https://qo2dt8ecve.execute-api.us-west-2.amazonaws.com/dev/token?site=help Documentation Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Release notes Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Okta Developer Auth0 Training Support Administrator Dashboard The Okta Admin Dashboard summarizes org usage and activity and notifies you of any problems or outstanding work to be completed. The navigation panel on the side provides shortcuts to the most commonly performed tasks. When you select an option from the navigation panel, the option is highlighted. You can also collapse and expand the top bar and the navigation panel as required. The top bar contains these items: Help : Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administrative best practices. You can also do the following tasks: Task Description View your org at a glance The number of active users, groups, and SSO apps in your org and a summary of org changes by all admins. View your org agents' status The operational status of org agents. View Okta service status The operational status of the Okta service. Monitor your tasks The issues in your org that require attention. Monitor your org's security Your org's metrics and user-reported suspicious activity metrics. Monitor your apps The number of user sign-ins across your org's apps over time. Monitor your org's rate limits Your org's rate limit warnings and violations metrics and tasks. Get started Super admins can view a Get Started with Okta page, which provides a way for new admins to learn the basics, build up their organization, and explore more Okta features. Get Started with Okta is a useful route for setting up your Okta integration. An icon is shown when you have completed an important setup task. For details, see Get started with Okta . © 2025 Okta, Inc . All Rights Reserved. Various trademarks held by their respective owners. Feedback",
+        "Administrator Dashboard | Okta Classic Engine Skip To Main Content Account Settings Logout placeholder Account Settings Logout Filter: All Files Submit Search oktaproduction9ounvcxa https://platform.cloud.coveo.com/rest/search https://support.okta.com/help/s/global-search/%40uri https://support.okta.com/help/services/apexrest/PublicSearchToken?site=help oktanonproduction1il1gtac7 https://qo2dt8ecve.execute-api.us-west-2.amazonaws.com/dev/token?site=help Documentation Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Release notes Identity Engine Classic Engine Access Gateway Advanced Server Access Workflows Identity Security Posture Management Okta Developer Auth0 Training Support Administrator Dashboard The Okta Admin Dashboard summarizes org usage and activity and notifies you of any problems or outstanding work to be completed. The navigation panel on the side provides shortcuts to the most commonly performed tasks. When you select an option from the navigation panel, the option is highlighted. You can also collapse and expand the top bar and the navigation panel as required. The top bar contains these items: Help : Provides links to help documentation, developer documentation, and trainings. App Switcher : Lists all your Okta apps. You can switch between the Admin Console and your Okta apps. Your org profile options. You can use the Admin Dashboard as a map of the Admin Console and as an index of administrative best practices. You can also do the following tasks: Task Description View your org at a glance The number of active users, groups, and SSO apps in your org and a summary of org changes by all admins. View your org agents' status The operational status of org agents. View Okta service status The operational status of the Okta service. Monitor your tasks The issues in your org that require attention. Monitor your org's security Your org's metrics and user-reported suspicious activity metrics. Monitor your apps The number of user sign-ins across your org's apps over time. Monitor your org's rate limits Your org's rate limit warnings and violations metrics and tasks. Get started Super admins can view a Get Started with Okta page, which provides a way for new admins to learn the basics, build up their organization, and explore more Okta features. Get Started with Okta is a useful route for setting up your Okta integration. An icon is shown when you have completed an important setup task. For details, see Get started with Okta . © 2025 Okta, Inc . All Rights Reserved. Various trademarks held by their respective owners. Feedback"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:55:19.415180",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 718,
+      "estimated_tokens": 179,
+      "estimated_cost_usd": 2.327e-05,
+      "texts_preview": [
+        "The Okta Admin Dashboard provides a comprehensive overview of your organization's usage and activity. It offers shortcuts to frequently performed tasks such as account settings, logout, and search functionality. The navigation panel on the side allows users to quickly access common operations like viewing org usage statistics and monitoring security issues.",
+        "The Okta Admin Dashboard provides a comprehensive overview of your organization's usage and activity. It offers shortcuts to frequently performed tasks such as account settings, logout, and search functionality. The navigation panel on the side allows users to quickly access common operations like viewing org usage statistics and monitoring security issues."
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T12:56:38.348929",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 6,
+      "total_characters": 2574,
+      "estimated_tokens": 643,
+      "estimated_cost_usd": 8.359e-05,
+      "texts_preview": [
+        "The Identity 101 Index | Okta provides comprehensive information about identity management and security features for developers. It offers a neutral platform that supports various industries, including non-human identities, high-performance IT, optimized digital experiences, and identity-powered security. The platform includes a developer community, resources, and support to help users build secure and efficient applications.",
+        "The Identity 101 Index | Okta provides comprehensive information about identity management and security features for developers. It offers a neutral platform that supports various industries, including non-human identities, high-performance IT, optimized digital experiences, and identity-powered security. The platform includes a developer community, resources, and support to help users build secure and efficient applications.",
+        "..."
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T14:30:59.888106",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 2,
+      "total_characters": 906,
+      "estimated_tokens": 226,
+      "estimated_cost_usd": 2.938e-05,
+      "texts_preview": [
+        "API Service Integrations allow third-party apps to access the Core Okta API. These integrations use OAuth 2.0 to access the API, which is more secure than using API tokens. The integration can access or modify resources like system logs, apps, sessions, and policies. For example, API Service Integrations enable applications to: Access Okta system log entries for analysis Send risk signals to Okta Sync Okta user profile information to another system.",
+        "API Service Integrations allow third-party apps to access the Core Okta API. These integrations use OAuth 2.0 to access the API, which is more secure than using API tokens. The integration can access or modify resources like system logs, apps, sessions, and policies. For example, API Service Integrations enable applications to: Access Okta system log entries for analysis Send risk signals to Okta Sync Okta user profile information to another system."
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T14:41:58.011596",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 43,
+      "total_characters": 4368,
+      "estimated_tokens": 1092,
+      "estimated_cost_usd": 0.00014196,
+      "texts_preview": [
+        "Does the contractor provide Okta Single Sign-On (SSO) Software-as-a-Service, including MFA and a cloud-hosted redundant environment?",
+        "Will the Contractor maintain the subscription and provide support and maintenance services for the full term?",
+        "..."
+      ]
+    }
+  ],
+  "total_tokens": 5691,
+  "total_requests": 16
+}

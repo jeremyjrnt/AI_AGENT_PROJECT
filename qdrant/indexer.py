@@ -2,16 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 Qdrant Indexer (minimal)
-- Input: list of {"text": str, "metadata": dict} items
-- Embeds texts with current provider and upserts to a target collection
+- Two main functions: upsert_data and upsert_rfp
+- All embedding logic integrated directly
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import Union
 from uuid import uuid4
-import os
+import sys
 from pathlib import Path
-import pandas as pd
 from datetime import datetime
 
 from qdrant_client.http.models import PointStruct
@@ -23,304 +22,266 @@ from .client import (
 )
 from .rfp_tracker import get_rfp_tracker
 
-JsonDoc = Dict[str, Any]
+# Import parsers
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+from parsers.internal_parser import parse_folder_to_data
+from parsers.rfp_parser import RFPParser
 
-def upsert_documents(docs: List[JsonDoc], collection_name: str) -> int:
+def upsert_data(
+    folder_path: Union[str, Path], 
+    target_chars: int = 1500, 
+    overlap: int = 300, 
+    mode: str = "hybrid",
+    collection_name: str = INTERNAL_COLLECTION
+) -> int:
     """
-    Minimal upsert: embed texts and attach metadata as payload.
-    Assumes the collection already exists and has the correct vector size.
+    Parse internal data using internal_parser and upsert to Qdrant.
     
     Args:
-        docs: List of documents with 'text' (str) and optional 'metadata' (dict)
-        collection_name: Target collection name
+        folder_path: Path to folder containing documents to parse
+        target_chars: Target characters per chunk
+        overlap: Overlap between chunks
+        mode: Parsing mode ('dev', 'prod', 'hybrid')
+        collection_name: Target Qdrant collection
         
     Returns:
-        int: Number of documents successfully inserted
-        
-    Example:
-        docs = [
-            {"text": "Hello world", "metadata": {"source": "test.html"}},
-            {"text": "Another doc", "metadata": {"category": "qa"}}
-        ]
-        count = upsert_documents(docs, "my_collection")
+        int: Number of documents successfully indexed
     """
-    if not docs:
+    print(f"🔄 Parsing data from: {folder_path}")
+    print(f"   Mode: {mode}, Target chars: {target_chars}, Overlap: {overlap}")
+    
+    # Parse using internal_parser
+    parsed_docs = parse_folder_to_data(
+        folder_path=folder_path,
+        target_chars=target_chars,
+        overlap=overlap,
+        mode=mode
+    )
+    
+    if not parsed_docs:
+        print("❌ No documents parsed")
         return 0
-
-    # 1) Extract texts (validate input)
+    
+    print(f"✅ Parsed {len(parsed_docs)} documents")
+    
+    # Extract texts for embedding (prioritize enhanced_text)
     texts = []
     payloads = []
-    for i, d in enumerate(docs):
-        txt = d.get("text")
-        if not isinstance(txt, str) or not txt.strip():
-            raise ValueError(f"Doc[{i}] must include non-empty 'text' (str).")
-        texts.append(txt)
-        md = d.get("metadata") or {}
-        if not isinstance(md, dict):
-            raise ValueError(f"Doc[{i}] 'metadata' must be a dict if provided.")
-        # Optionally store original text for debugging/retrieval
-        md.setdefault("text", txt)
-        payloads.append(md)
-
-    # 2) Get embeddings (lazy-loaded provider)
+    
+    for i, doc in enumerate(parsed_docs):
+        # Check different locations for enhanced_text
+        enhanced_txt = ""
+        
+        # Try different possible locations for enhanced_text
+        if doc.get("enhanced_text"):
+            enhanced_txt = doc.get("enhanced_text")
+        elif doc.get("llm", {}).get("enhanced_text"):
+            enhanced_txt = doc.get("llm", {}).get("enhanced_text")
+        elif doc.get("metadata", {}).get("llm", {}).get("enhanced_text"):
+            enhanced_txt = doc.get("metadata", {}).get("llm", {}).get("enhanced_text")
+        
+        original_txt = doc.get("text", "")
+        
+        # Use enhanced_text if available and non-empty, otherwise fallback to text
+        if enhanced_txt and enhanced_txt.strip():
+            embedding_text = enhanced_txt
+            embedded_field = "enhanced_text"
+            print(f"📝 Using enhanced_text for embedding (doc {i+1})")
+        elif original_txt and original_txt.strip():
+            embedding_text = original_txt
+            embedded_field = "text"
+            print(f"📝 Using text for embedding (doc {i+1}) - no enhanced_text available")
+        else:
+            print(f"⚠️  Skipping document {i+1}: no valid text for embedding")
+            continue
+        
+        texts.append(embedding_text)
+        
+        # Prepare metadata
+        metadata = doc.get("metadata", {})
+        metadata.update({
+            "parsing_mode": mode,
+            "target_chars": target_chars,
+            "overlap": overlap,
+            "indexed_at": datetime.now().isoformat(),
+            "document_type": "internal_data",
+            "embedded_field": embedded_field
+        })
+        
+        # Store both text fields if available, but avoid duplication
+        if original_txt:
+            metadata["text"] = original_txt
+        
+        # Only store enhanced_text at root level if it's not already in metadata structure
+        if enhanced_txt and embedded_field == "enhanced_text":
+            # Check if enhanced_text is already stored in metadata.llm structure
+            if not (metadata.get("llm", {}).get("enhanced_text")):
+                metadata["enhanced_text"] = enhanced_txt
+        
+        if doc.get('summary'):
+            metadata["summary"] = doc.get('summary')
+        
+        payloads.append(metadata)
+    
+    if not texts:
+        print("❌ No valid texts for embedding")
+        return 0
+    
+    print(f"🗃️ Indexing {len(texts)} documents to {collection_name}...")
+    
+    # Get embeddings
     emb = get_embeddings()
     vectors = emb.embed_documents(texts)
     if len(vectors) != len(texts):
         raise RuntimeError("Embedding count mismatch.")
-
-    # 3) Build points
+    
+    # Build points
     points = [
         PointStruct(id=str(uuid4()), vector=vec, payload=pld)
         for vec, pld in zip(vectors, payloads)
     ]
-
-    # 4) Upsert
+    
+    # Upsert to Qdrant
     client = get_qdrant_client()
     client.upsert(collection_name=collection_name, points=points)
     return len(points)
 
-# Convenience wrappers
-def index_internal_documents(docs: List[JsonDoc]) -> int:
-    """Upsert into the stable internal collection."""
-    return upsert_documents(docs, INTERNAL_COLLECTION)
 
-
-def index_rfp_qa_pairs(qa_pairs: List[JsonDoc]) -> int:
-    """Upsert into the evolving RFP Q&A history collection."""
-    return upsert_documents(qa_pairs, RFP_QA_COLLECTION)
-
-
-def index_internal_data_with_source(data_folder_path: str, source_name: str = "internal_docs") -> int:
+def upsert_rfp(
+    rfp_file_path: Union[str, Path],
+    question_vectors: list,
+    submitter_name: str,
+    collection_name: str = RFP_QA_COLLECTION,
+    auto_cleanup: bool = True
+) -> int:
     """
-    Index internal documentation data into vector database with internal source metadata.
+    Parse RFP Excel file with 'Question', 'Answer', 'Comments' columns and upsert to Qdrant.
     
     Args:
-        data_folder_path: Path to folder containing internal documents
-        source_name: Name to identify the source (default: "internal_docs")
-        
-    Returns:
-        int: Number of documents indexed
-        
-    Example:
-        count = index_internal_data_with_source("/path/to/internal/docs", "company_handbook")
-    """
-    data_path = Path(data_folder_path)
-    if not data_path.exists():
-        raise FileNotFoundError(f"Data folder not found: {data_folder_path}")
-    
-    documents = []
-    
-    # Process text files (.txt, .md)
-    for file_path in data_path.rglob("*.txt"):
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content:
-                    documents.append({
-                        "text": content,
-                        "metadata": {
-                            "source": "internal",
-                            "source_type": "internal_docs",
-                            "source_name": source_name,
-                            "file_path": str(file_path),
-                            "file_name": file_path.name,
-                            "indexed_at": datetime.now().isoformat(),
-                            "document_type": "internal_documentation"
-                        }
-                    })
-        except Exception as e:
-            print(f"Error processing {file_path}: {e}")
-    
-    # Process markdown files
-    for file_path in data_path.rglob("*.md"):
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content:
-                    documents.append({
-                        "text": content,
-                        "metadata": {
-                            "source": "internal",
-                            "source_type": "internal_docs",
-                            "source_name": source_name,
-                            "file_path": str(file_path),
-                            "file_name": file_path.name,
-                            "indexed_at": datetime.now().isoformat(),
-                            "document_type": "internal_documentation"
-                        }
-                    })
-        except Exception as e:
-            print(f"Error processing {file_path}: {e}")
-    
-    if documents:
-        return index_internal_documents(documents)
-    else:
-        print(f"No documents found in {data_folder_path}")
-        return 0
-
-
-def index_completed_rfp(rfp_excel_path: str, rfp_source_info: Dict[str, Any] = None, auto_cleanup: bool = True) -> int:
-    """
-    Index completed RFP Q&A pairs into vector database with automatic numbering and cleanup.
-    The vector is created from the question text, and the answer + metadata are stored as payload.
-    
-    Args:
-        rfp_excel_path: Path to completed RFP Excel file
-        rfp_source_info: Additional source information (client, project, etc.)
+        rfp_file_path: Path to RFP Excel file with Question/Answer/Comments columns
+        question_vectors: Pre-computed embedding vectors for questions (list of vectors)
+        submitter_name: Single submitter name for the entire RFP
+        collection_name: Target Qdrant collection
         auto_cleanup: Whether to perform automatic cleanup of old RFPs
         
     Returns:
-        int: Number of Q&A pairs indexed
-        
-    Example:
-        source_info = {
-            "client_name": "TechCorp",
-            "project": "Cloud Migration RFP",
-            "completion_date": "2025-08-18"
-        }
-        count = index_completed_rfp("/path/to/completed_rfp.xlsx", source_info)
+        int: Number of Q&A pairs successfully indexed
     """
-    excel_path = Path(rfp_excel_path)
-    if not excel_path.exists():
-        raise FileNotFoundError(f"RFP Excel file not found: {rfp_excel_path}")
+    import pandas as pd
     
-    # Get RFP tracker and assign next RFP number
+    rfp_path = Path(rfp_file_path)
+    if not rfp_path.exists():
+        raise FileNotFoundError(f"RFP file not found: {rfp_file_path}")
+    
+    print(f"🔄 Parsing RFP from: {rfp_path.name}")
+    print(f"📝 Submitter: {submitter_name}")
+    print(f"🔢 Received {len(question_vectors)} pre-computed vectors")
+    
+    # Get RFP tracker and assign next RFP number (age counter)
     tracker = get_rfp_tracker()
-    rfp_number = tracker.get_next_rfp_number()
-    
-    print(f"📋 Processing RFP #{rfp_number}: {excel_path.name}")
-    
-    # Default source info
-    if rfp_source_info is None:
-        rfp_source_info = {}
+    rfp_age = tracker.get_next_rfp_number()
     
     try:
         # Read Excel file
-        df = pd.read_excel(excel_path)
+        df = pd.read_excel(rfp_path)
+        print(f"📋 Loaded Excel with {len(df)} rows and columns: {list(df.columns)}")
         
-        # Validate required columns (flexible column names)
-        question_col = None
-        answer_col = None
-        comment_col = None
-        validator_col = None
+        # Validate required columns
+        required_cols = ['Question', 'Answer', 'Comments']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}. Found: {list(df.columns)}")
         
-        for col in df.columns:
-            col_lower = col.lower().strip()
-            if 'question' in col_lower:
-                question_col = col
-            elif 'answer' in col_lower:
-                answer_col = col
-            elif 'comment' in col_lower or 'note' in col_lower:
-                comment_col = col
-            elif 'validator' in col_lower:
-                validator_col = col
+        # Extract question data
+        questions = []
+        payloads = []
+        valid_vectors = []
         
-        if not question_col or not answer_col:
-            raise ValueError("Excel must contain 'Question' and 'Answer' columns")
-        
-        qa_documents = []
-        
-        for idx, row in df.iterrows():
-            question = str(row[question_col]).strip()
-            answer = str(row[answer_col]).strip()
-            comment = str(row[comment_col]).strip() if comment_col else ""
-            validator = str(row[validator_col]).strip() if validator_col else ""
+        for index, row in df.iterrows():
+            question = str(row['Question']).strip()
+            answer = str(row['Answer']).strip() 
+            comments = str(row['Comments']).strip()
             
             # Skip empty questions
             if not question or question.lower() in ['nan', 'none', '']:
+                print(f"⚠️  Skipping row {index+1}: empty question")
                 continue
             
-            # Create metadata with RFP number
+            # Check if we have corresponding vector
+            if index >= len(question_vectors):
+                print(f"⚠️  Skipping row {index+1}: no corresponding vector")
+                continue
+            
+            # Get validator name (try different column names)
+            validator_name = ""
+            for val_col in ['Validator', 'Validator_Name', 'ValidatorName', 'validator_name']:
+                if val_col in df.columns:
+                    validator_name = str(row.get(val_col, '')).strip()
+                    break
+            
+            questions.append(question)
+            valid_vectors.append(question_vectors[index])
+            
+            # Prepare metadata
             metadata = {
+                # Core RFP info
                 "source": "past-rfp",
                 "source_type": "completed_rfp",
-                "rfp_number": rfp_number,  # Add RFP number for tracking and cleanup
+                "rfp_name": rfp_path.stem,  # filename without extension
+                "rfp_file": rfp_path.name,
+                "rfp_path": str(rfp_path),
+                "rfp_age": rfp_age,  # RFP counter/age
+                "submitter_name": submitter_name,
+                
+                # Question data
                 "question": question,
                 "answer": answer,
-                "comment": comment,
-                "validator_name": validator,  # Add validator name
-                "rfp_file": excel_path.name,
-                "rfp_path": str(excel_path),
-                "question_index": idx,
+                "comments": comments,
+                "validator_name": validator_name,
+                "question_index": index,
+                
+                # Technical metadata  
                 "indexed_at": datetime.now().isoformat(),
-                "document_type": "rfp_qa_pair"
+                "document_type": "rfp_qa_pair",
+                "embedded_field": "question"
             }
             
-            # Add custom source info
-            metadata.update(rfp_source_info)
-            
-            qa_documents.append({
-                "text": question,  # The vector will be created from the question
-                "metadata": metadata
-            })
+            payloads.append(metadata)
         
-        if qa_documents:
-            print(f"📝 Indexing {len(qa_documents)} Q&A pairs from {excel_path.name}")
-            indexed_count = index_rfp_qa_pairs(qa_documents)
-            
-            # Perform automatic cleanup after successful indexing
-            if auto_cleanup and indexed_count > 0:
-                print(f"🧹 Running automatic cleanup for RFP #{rfp_number}...")
-                cleanup_count = tracker.cleanup_old_rfps()
-                if cleanup_count > 0:
-                    print(f"✅ Cleaned up {cleanup_count} old RFP documents")
-            
-            return indexed_count
-        else:
-            print(f"No valid Q&A pairs found in {excel_path}")
+        if not questions:
+            print("❌ No valid questions found for indexing")
             return 0
-            
+        
+        # Validate vector count matches question count
+        if len(valid_vectors) != len(questions):
+            raise ValueError(f"Vector count mismatch: {len(valid_vectors)} vectors != {len(questions)} questions")
+        
+        print(f"✅ Extracted {len(questions)} valid Q&A pairs with matching vectors")
+        print(f"🗃️ Indexing to {collection_name} with RFP age #{rfp_age}...")
+        
+        # Build points using provided vectors
+        points = [
+            PointStruct(id=str(uuid4()), vector=vec, payload=pld)
+            for vec, pld in zip(valid_vectors, payloads)
+        ]
+        
+        # Upsert to Qdrant
+        client = get_qdrant_client()
+        client.upsert(collection_name=collection_name, points=points)
+        indexed_count = len(points)
+        
+        print(f"✅ Successfully indexed {indexed_count} Q&A pairs")
+        
+        # Perform automatic cleanup after successful indexing
+        if auto_cleanup and indexed_count > 0:
+            print(f"🧹 Running automatic cleanup for RFP age #{rfp_age}...")
+            cleanup_count = tracker.cleanup_old_rfps()
+            if cleanup_count > 0:
+                print(f"✅ Cleaned up {cleanup_count} old RFP documents")
+        
+        return indexed_count
+        
     except Exception as e:
-        print(f"Error processing RFP Excel file {rfp_excel_path}: {e}")
+        print(f"❌ Error parsing RFP: {e}")
         raise
-
-
-'''def batch_index_completed_rfps(completed_rfps_folder: str) -> int:
-    """
-    Batch index all completed RFP Excel files from a folder.
-    
-    Args:
-        completed_rfps_folder: Path to folder containing completed RFP Excel files
-        
-    Returns:
-        int: Total number of Q&A pairs indexed
-        
-    Example:
-        total = batch_index_completed_rfps("/path/to/completed_RFPs/")
-    """
-    folder_path = Path(completed_rfps_folder)
-    if not folder_path.exists():
-        raise FileNotFoundError(f"Completed RFPs folder not found: {completed_rfps_folder}")
-    
-    total_indexed = 0
-    processed_files = []
-    
-    # Process all Excel files in the folder
-    for excel_file in folder_path.glob("*.xlsx"):
-        try:
-            # Extract source info from filename if possible
-            source_info = {
-                "batch_indexed": True,
-                "batch_date": datetime.now().isoformat(),
-                "source_folder": str(folder_path)
-            }
-            
-            # Try to extract info from filename (e.g., "client_project_date.xlsx")
-            filename_parts = excel_file.stem.split('_')
-            if len(filename_parts) >= 2:
-                source_info["derived_client"] = filename_parts[0]
-                source_info["derived_project"] = '_'.join(filename_parts[1:-1]) if len(filename_parts) > 2 else filename_parts[1]
-            
-            count = index_completed_rfp(str(excel_file), source_info)
-            total_indexed += count
-            processed_files.append(excel_file.name)
-            print(f"✅ Indexed {count} Q&A pairs from {excel_file.name}")
-            
-        except Exception as e:
-            print(f"❌ Error processing {excel_file.name}: {e}")
-    
-    print(f"\n🎉 Batch indexing complete!")
-    print(f"📁 Processed {len(processed_files)} files")
-    print(f"📊 Total Q&A pairs indexed: {total_indexed}")
-    
-    return total_indexed'''

@@ -4,6 +4,7 @@
 Qdrant Vector Database Client
 - Dynamic embedding provider (HuggingFace now, OpenAI later)
 - Idempotent collection setup with automatic vector size detection
+- Usage tracking for cost monitoring
 """
 
 from __future__ import annotations
@@ -12,6 +13,16 @@ from typing import Dict, Any, Optional, List
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 import settings
+
+# Usage tracking
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+try:
+    from usage_tracker import LocalUsageTracker
+    usage_tracker = LocalUsageTracker("embeddings_usage.json")
+except ImportError:
+    usage_tracker = None
 
 # Collections
 INTERNAL_COLLECTION = "internal_knowledge_base"  # stable
@@ -29,23 +40,73 @@ def _get_huggingface_embeddings():
 def _get_openai_embeddings():
     """Lazy import to avoid requiring OpenAI until you switch."""
     # pip install langchain-openai
-    from langchain_openai import OpenAIEmbeddings
-    model = getattr(settings, "OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-    return OpenAIEmbeddings(api_key=settings.OPENAI_API_KEY, model=model)
+    from langchain_openai import AzureOpenAIEmbeddings
+    
+    # Utilise directement Azure OpenAI
+    if settings.is_azure_openai_configured():
+        return AzureOpenAIEmbeddings(
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment=settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+        )
+    else:
+        raise ValueError("Azure OpenAI is not configured. Please check your .env file.")
 
 
 def get_embeddings():
     """
     Return a LangChain embeddings object according to EMBEDDING_PROVIDER.
-    Supported: "huggingface" (free), "openai".
+    Supported: "huggingface" (free), "openai" (Azure OpenAI only).
+    Includes usage tracking for cost monitoring.
     """
     provider = getattr(settings, "EMBEDDING_PROVIDER", "huggingface").lower()
     if provider == "openai":
-        if not getattr(settings, "OPENAI_API_KEY", ""):
-            raise ValueError("OPENAI_API_KEY is missing in settings for provider='openai'.")
-        return _get_openai_embeddings()
-    # default -> huggingface
-    return _get_huggingface_embeddings()
+        if not settings.is_azure_openai_configured():
+            raise ValueError("Azure OpenAI is not configured for provider='openai'. Check your .env file.")
+        
+        # Wrap Azure OpenAI embeddings with usage tracking
+        base_embeddings = _get_openai_embeddings()
+        if usage_tracker:
+            return TrackedEmbeddings(base_embeddings, "azure_openai", "team11-embedding")
+        return base_embeddings
+    
+    # default -> huggingface  
+    base_embeddings = _get_huggingface_embeddings()
+    if usage_tracker:
+        return TrackedEmbeddings(base_embeddings, "huggingface", settings.EMBEDDING_MODEL)
+    return base_embeddings
+
+
+class TrackedEmbeddings:
+    """Wrapper pour tracker l'utilisation des embeddings"""
+    
+    def __init__(self, base_embeddings, provider, model):
+        self.base_embeddings = base_embeddings
+        self.provider = provider
+        self.model = model
+    
+    def embed_documents(self, texts):
+        """Embed documents avec tracking"""
+        # Log l'utilisation avant l'appel
+        if usage_tracker:
+            usage_tracker.log_embedding_request(texts, self.provider, self.model)
+        
+        # Faire l'embedding réel
+        return self.base_embeddings.embed_documents(texts)
+    
+    def embed_query(self, text):
+        """Embed query avec tracking"""
+        # Log l'utilisation avant l'appel  
+        if usage_tracker:
+            usage_tracker.log_embedding_request([text], self.provider, self.model)
+        
+        # Faire l'embedding réel
+        return self.base_embeddings.embed_query(text)
+    
+    def __getattr__(self, name):
+        """Déléguer tous les autres attributs à l'embedding de base"""
+        return getattr(self.base_embeddings, name)
 
 
 def detect_vector_size(embeddings_obj) -> int:
@@ -165,13 +226,15 @@ def get_collection_info(client: QdrantClient, collection_name: str) -> Optional[
 def get_all_collections_info() -> Dict[str, Any]:
     """Convenience helper to inspect connection and both collections."""
     client = get_qdrant_client()
+    
     return {
         "connection": {
             "qdrant_url": settings.QDRANT_URL,
             "has_api_key": bool(getattr(settings, "QDRANT_API_KEY", "")),
             "provider": getattr(settings, "EMBEDDING_PROVIDER", "huggingface"),
             "model": getattr(settings, "EMBEDDING_MODEL", ""),
-            "openai_model": getattr(settings, "OPENAI_EMBEDDING_MODEL", ""),
+            "azure_configured": settings.is_azure_openai_configured(),
+            "azure_deployment": settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT if settings.is_azure_openai_configured() else None,
         },
         "collections": {
             "internal": get_collection_info(client, INTERNAL_COLLECTION),

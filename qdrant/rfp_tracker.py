@@ -4,6 +4,7 @@
 RFP Tracking System
 - Manages RFP numbering and automatic cleanup
 - Maintains current RFP number and handles age-based cleanup
+- Max age difference is 20 by default
 """
 
 from __future__ import annotations
