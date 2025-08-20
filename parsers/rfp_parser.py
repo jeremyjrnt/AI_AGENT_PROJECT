@@ -1,17 +1,14 @@
 """
-RFP Parser with Dev/Prod mode support
-Dev Mode: Pattern-based extraction (free, no LLM required)
-Prod Mode: Enhanced OpenAI-powered extraction with improved accuracy
+RFP Parser for Azure OpenAI - Exhaustive Question Extraction
+Converts PDF RFPs into comprehensive question lists using Azure OpenAI
 """
 
 import os
-import re
-import json
-import uuid
 import sys
+import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional
 
 import pandas as pd
 
@@ -24,544 +21,500 @@ import settings
 
 class RFPParser:
     """
-    RFP document parser with Dev/Prod mode support
-    Dev Mode: Free pattern-based extraction using regex
-    Prod Mode: Enhanced OpenAI-powered extraction with better accuracy
+    RFP Parser that converts PDF requirements into exhaustive question lists
+    using Azure OpenAI for intelligent extraction
     """
     
-    def __init__(self, mode="dev", model=None):
-        """
-        Initialize RFP parser with mode selection
-        
-        Args:
-            mode: "dev" for pattern-based extraction or "prod" for LLM-enhanced extraction
-            model: LLM model to use (auto-selected based on mode if None)
-        """
-        self.mode = mode.lower()
-        
-        # Auto-select model based on mode
-        if model is None:
-            if self.mode == "prod":
-                self.model = "gpt-4o-mini"  # Fast and cost-effective for production
-            else:
-                self.model = "pattern"  # No LLM needed in dev mode
-        else:
-            self.model = model
-        
-        # Initialize LLM for production mode
-        if self.mode == "prod":
-            self._initialize_llm()
-        
-        print(f"📄 RFPParser initialized in {self.mode.upper()} mode")
+    def __init__(self):
+        """Initialize RFP parser with Azure OpenAI and setup directories"""
+        self._initialize_azure_openai()
+        self._setup_directories()
+        print("🚀 RFPParser initialized with Azure OpenAI")
     
-    def _initialize_llm(self):
-        """Initialize LLM for production mode question extraction"""
+    def _setup_directories(self):
+        """Setup required directories for RFP workflow"""
+        self.project_root = Path(__file__).parent.parent
+        
+        # Define directory structure using existing data/ folders
+        self.new_rfps_dir = self.project_root / "data" / "new_RFPs"
+        self.past_rfps_dir = self.project_root / "data" / "past_RFPs_pdf" 
+        self.parsed_rfps_dir = self.project_root / "data" / "parsed_RFPs"
+        
+        # Create directories if they don't exist (but they should already exist)
+        for directory in [self.new_rfps_dir, self.past_rfps_dir, self.parsed_rfps_dir]:
+            directory.mkdir(parents=True, exist_ok=True)
+        
+        print(f"📁 Using existing directory structure:")
+        print(f"   • new_RFPs: {self.new_rfps_dir}")
+        print(f"   • past_RFPs_pdf: {self.past_rfps_dir}")
+        print(f"   • parsed_RFPs: {self.parsed_rfps_dir}")
+    
+    def _initialize_azure_openai(self):
+        """Initialize Azure OpenAI client"""
         try:
-            if not settings.OPENAI_API_KEY:
-                print("⚠️ OpenAI API key not found. Falling back to dev mode.")
-                self.mode = "dev"
-                self.model = "pattern"
-                self.client = None
-                return
+            # Check Azure OpenAI configuration
+            if not all([
+                settings.AZURE_OPENAI_API_KEY,
+                settings.AZURE_OPENAI_ENDPOINT,
+                settings.AZURE_OPENAI_CHAT_DEPLOYMENT
+            ]):
+                raise ValueError("Azure OpenAI configuration incomplete. Check your .env file.")
             
-            import openai
+            from openai import AzureOpenAI
             
-            self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
-            print(f"🚀 Production Mode: Using OpenAI model {self.model} for question extraction")
+            self.client = AzureOpenAI(
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            )
+            
+            self.model = settings.AZURE_OPENAI_CHAT_DEPLOYMENT
+            print(f"🚀 Connected to Azure OpenAI: {self.model}")
             
         except ImportError:
-            print("⚠️ openai package not installed. Falling back to dev mode.")
-            self.mode = "dev"
-            self.model = "pattern"
-            self.client = None
+            raise RuntimeError("Azure OpenAI package not installed. Run: pip install openai")
         except Exception as e:
-            print(f"⚠️ LLM initialization failed: {e}. Falling back to dev mode.")
-            self.mode = "dev"
-            self.model = "pattern"
-            self.client = None
+            raise RuntimeError(f"Azure OpenAI initialization failed: {e}")
     
     def read_pdf_text(self, pdf_path: str) -> str:
-        """Read PDF into plain text. Prefer PyMuPDF; fallback to PyPDF2."""
+        """Read PDF into plain text using PyMuPDF with PyPDF2 fallback"""
         if not os.path.isfile(pdf_path):
-            raise FileNotFoundError(f"File not found: {pdf_path}")
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Try PyMuPDF (fitz) first
+        print(f"📖 Reading PDF: {Path(pdf_path).name}")
+        
+        # Try PyMuPDF (fitz) first - better text extraction
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(pdf_path)
             pages = []
-            for p in doc:
-                pages.append(p.get_text())
-            text = "\n".join(pages).strip()
-            if text:
-                return text
-        except Exception:
-            pass
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                text = page.get_text()
+                if text.strip():
+                    pages.append(f"--- Page {page_num + 1} ---\n{text}")
+            
+            full_text = "\n\n".join(pages)
+            doc.close()
+            
+            if full_text.strip():
+                print(f"✅ PDF read successfully with PyMuPDF ({len(full_text)} characters)")
+                return full_text.strip()
+                
+        except ImportError:
+            print("⚠️ PyMuPDF not available, trying PyPDF2...")
+        except Exception as e:
+            print(f"⚠️ PyMuPDF failed: {e}, trying PyPDF2...")
 
-        # Fallback: PyPDF2
+        # Fallback to PyPDF2
         try:
             from PyPDF2 import PdfReader
             reader = PdfReader(pdf_path)
             pages = []
-            for p in reader.pages:
-                pages.append(p.extract_text() or "")
-            text = "\n".join(pages).strip()
-            return text
+            
+            for page_num, page in enumerate(reader.pages):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append(f"--- Page {page_num + 1} ---\n{text}")
+            
+            full_text = "\n\n".join(pages)
+            
+            if full_text.strip():
+                print(f"✅ PDF read successfully with PyPDF2 ({len(full_text)} characters)")
+                return full_text.strip()
+            else:
+                raise ValueError("PDF appears to be empty or contains no extractable text")
+                
+        except ImportError:
+            raise RuntimeError("Neither PyMuPDF nor PyPDF2 is installed. Install one: pip install PyMuPDF or pip install PyPDF2")
         except Exception as e:
-            raise RuntimeError(f"PDF parse failed with both backends: {e}")
+            raise RuntimeError(f"PDF extraction failed with both methods: {e}")
     
-    def chunk_text(self, text: str, max_chunk_size: int = 4000) -> List[Dict[str, str]]:
-        """Light chunking by headings and size; returns [{'content','section_ref'}, ...]."""
-        heading_pattern = r'^(\d+(\.\d+)*)\s+|^(Section|Chapitre|Annex(e)?)\b|^Page\s+\d+'
-        chunks, current, section = [], [], "Introduction"
-        lines = text.splitlines()
-
-        for line in lines:
-            line_stripped = line.strip()
-            if re.match(heading_pattern, line_stripped, re.IGNORECASE):
-                if current:
-                    blob = "\n".join(current).strip()
-                    if len(blob) > 50:
-                        chunks.append({"content": blob, "section_ref": section})
-                    current = []
-                section = (line_stripped[:80] or section)
-            current.append(line)
-            if len("\n".join(current)) > max_chunk_size:
-                blob = "\n".join(current).strip()
-                if len(blob) > 50:
-                    chunks.append({"content": blob, "section_ref": section})
-                current = []
-
-        if current:
-            blob = "\n".join(current).strip()
-            if len(blob) > 50:
-                chunks.append({"content": blob, "section_ref": section})
+    def chunk_text(self, text: str, max_chunk_size: int = 15000) -> List[str]:
+        """
+        Chunk text for Azure OpenAI processing
+        Uses larger chunks (15k chars) since we're processing everything at once for <30 pages
+        """
+        # For documents under 30 pages (~90k chars), we can process in fewer, larger chunks
+        if len(text) <= 90000:  # ~30 pages
+            # Split into 2-3 large chunks maximum
+            chunk_size = min(max_chunk_size, len(text) // 2 + 1)
+        else:
+            chunk_size = max_chunk_size
+        
+        chunks = []
+        current_pos = 0
+        
+        while current_pos < len(text):
+            chunk_end = current_pos + chunk_size
+            
+            # If not the last chunk, try to break at a natural boundary
+            if chunk_end < len(text):
+                # Look for section breaks, paragraph breaks, or sentence endings
+                breakpoints = [
+                    text.rfind('\n\nSection', current_pos, chunk_end),
+                    text.rfind('\n\n', current_pos, chunk_end),
+                    text.rfind('. ', current_pos, chunk_end),
+                ]
+                
+                # Use the best breakpoint found
+                best_break = max([bp for bp in breakpoints if bp > current_pos], default=chunk_end)
+                chunk_end = best_break
+            
+            chunk = text[current_pos:chunk_end].strip()
+            if chunk:
+                chunks.append(chunk)
+            
+            current_pos = chunk_end
+        
+        print(f"📑 Text chunked into {len(chunks)} parts")
         return chunks
     
-    def _extract_with_openai(self, chunk_text: str, section_ref: str) -> List[Dict]:
-        """Extract questions using OpenAI API (Production mode only)."""
-        if self.mode != "prod" or not hasattr(self, 'client') or self.client is None:
-            return self._extract_with_patterns(chunk_text, section_ref)
-        
+    def extract_questions_from_text(self, text: str) -> List[str]:
+        """
+        Extract exhaustive questions from RFP text using Azure OpenAI
+        """
+        system_prompt = """You are an RFP question extraction expert.  
+Your task is to read the following RFP text and extract ALL the questions, requirements, and expectations, whether explicit or implicit.  
+
+Rules and guidance:
+- Convert every requirement, condition, or obligation into a QUESTION form.  
+  Example: "The contractor shall provide 24/7 support" → "Will the contractor provide 24/7 support?"  
+- Include **implicit expectations**:  
+  - If the text mentions insurance requirements → ask a question about whether the contractor maintains those insurance coverages.  
+  - If the text specifies contract duration → ask a question like "Will the contractor commit to a 3-year contract term with two 1-year extension options?"  
+  - If the text prohibits substitutions → ask "Will the contractor refrain from providing substitutions or equivalents?"  
+- Be EXHAUSTIVE: Do not skip any requirement, clause, or condition, no matter how minor.  
+- Cover ALL categories evoked in this RFP.  
+
+- Phrase each item as a **standalone clear question** starting with "Will the contractor…", "Does the contractor…", "Can the contractor…", or "Is the contractor required to…".  
+- Output format:  
+  1. A numbered list of ALL extracted questions, one per line.  
+  2. No summaries, no grouping — just the full question set.  
+
+IMPORTANT: Do not miss any requirement. Even minor or administrative details must be turned into a question."""
+
         try:
-            system_prompt = """You are an RFP question extraction expert. Extract ALL questions from the text, including:
-
-1. EXPLICIT questions (direct questions with ? marks)
-2. IMPLICIT questions (requirements, specifications, requests for information)
-
-Focus on: security, SLAs, data residency, support, certifications, compliance, pricing, technical specs, submission requirements, deadlines, contact info.
-
-Return ONLY a JSON array of objects with these EXACT keys:
-- qid: unique identifier  
-- question_text: the question/requirement
-- question_type: "explicit" or "implicit"
-- section_ref: section reference from text
-- priority: "high", "medium", or "low" 
-- deadline_hint: any deadline mentioned or null
-- answer_guidance: how to answer or null
-- entities: relevant entities/companies mentioned (array)
-- original_span: original text excerpt (max 200 chars)
-- confidence: 0.0-1.0 confidence score
-
-Return valid JSON array only. No markdown, no explanations."""
-
+            print("🔍 Sending text to Azure OpenAI for question extraction...")
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Extract questions from this RFP section ({section_ref}):\n\n{chunk_text}"}
+                    {"role": "user", "content": f"Extract ALL questions from this RFP text:\n\n{text}"}
                 ],
-                temperature=0.1,
-                max_tokens=2000
+                temperature=0.1,  # Low temperature for consistent extraction
+                max_tokens=4000   # Generous token limit for comprehensive extraction
             )
             
             content = response.choices[0].message.content.strip()
             
-            # Clean markdown fences if present
-            if content.startswith('```'):
-                lines = content.split('\n')
-                content = '\n'.join(lines[1:-1])
-            
-            # Parse JSON
-            try:
-                questions = json.loads(content)
-                if isinstance(questions, dict):
-                    questions = [questions]
-                
-                # Normalize and add missing fields
-                normalized = []
-                for q in questions:
-                    normalized.append({
-                        "qid": str(uuid.uuid4())[:8],
-                        "question_text": q.get("question_text", "").strip(),
-                        "question_type": q.get("question_type", "implicit"),
-                        "section_ref": q.get("section_ref") or section_ref,
-                        "priority": q.get("priority", "medium"),
-                        "deadline_hint": q.get("deadline_hint"),
-                        "answer_guidance": q.get("answer_guidance"),
-                        "entities": q.get("entities", []),
-                        "original_span": str(q.get("original_span", ""))[:200],
-                        "confidence": float(q.get("confidence", 0.9)),
-                        "processing_mode": self.mode,
-                        "llm_model": self.model
-                    })
-                
-                print(f"🚀 Extracted {len(normalized)} questions from {section_ref} using OpenAI")
-                return normalized
-                
-            except json.JSONDecodeError as e:
-                print(f"⚠️ OpenAI JSON parsing failed for {section_ref}: {e}")
-                return self._extract_with_patterns(chunk_text, section_ref)  # Fallback
-                
-        except Exception as e:
-            print(f"⚠️ OpenAI API failed for {section_ref}: {e}")
-            return self._extract_with_patterns(chunk_text, section_ref)  # Fallback
-    
-    def _extract_with_patterns(self, chunk_text: str, section_ref: str) -> List[Dict]:
-        """Extract questions using regex patterns (Dev mode and fallback)."""
-        try:
+            # Parse the numbered list into individual questions
             questions = []
+            lines = content.split('\n')
             
-            # 1. Find explicit questions (with ? marks)
-            explicit_questions = re.findall(r'([^.!?]*\?[^.!?]*)', chunk_text, re.IGNORECASE | re.MULTILINE)
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Remove numbering (1., 2., etc.) and clean up
+                import re
+                clean_line = re.sub(r'^\d+\.\s*', '', line).strip()
+                
+                if clean_line and len(clean_line) > 10:  # Filter very short lines
+                    questions.append(clean_line)
             
-            for i, q in enumerate(explicit_questions):
-                q = q.strip()
-                if len(q) > 10:  # Filter out very short questions
-                    questions.append({
-                        "qid": str(uuid.uuid4())[:8],
-                        "question_text": q.replace('\n', ' ').strip(),
-                        "question_type": "explicit",
-                        "section_ref": section_ref,
-                        "priority": "medium",
-                        "deadline_hint": None,
-                        "answer_guidance": None,
-                        "entities": [],
-                        "original_span": q[:200],
-                        "confidence": 0.9,
-                        "processing_mode": self.mode,
-                        "llm_model": None
-                    })
-            
-            # 2. Find implicit questions (requirements patterns)
-            requirement_patterns = [
-                r'(?:vendor|supplier|bidder|contractor)\s+(?:must|shall|should|will)\s+([^.!?]+[.!?])',
-                r'(?:provide|submit|include|demonstrate|ensure|maintain)\s+([^.!?]+[.!?])',
-                r'(?:requirements?\s+for|specification(?:s)?\s+for|details?\s+of)\s+([^.!?]+[.!?])',
-                r'(?:describe|explain|detail|specify|list|identify)\s+([^.!?]+[.!?])',
-                r'(?:what|how|when|where|which|why)\s+([^.!?]+[.!?])',
-                r'(?:compliance with|adherence to|certification(?:s)?\s+for)\s+([^.!?]+[.!?])',
-                r'(?:support|maintenance|training|documentation)\s+(?:plan|strategy|approach|method)\s+([^.!?]+[.!?])',
-                r'(?:security|privacy|data protection|backup|disaster recovery)\s+([^.!?]+[.!?])',
-                r'(?:pricing|cost|budget|fee|charge)\s+([^.!?]+[.!?])',
-                r'(?:deadline|due date|timeline|schedule|delivery)\s+([^.!?]+[.!?])'
-            ]
-            
-            for pattern in requirement_patterns:
-                matches = re.findall(pattern, chunk_text, re.IGNORECASE | re.MULTILINE)
-                for match in matches:
-                    requirement = match.strip()
-                    if len(requirement) > 15:  # Filter out very short requirements
-                        # Convert requirement to question format
-                        question_text = f"What are the requirements for {requirement.lower()}"
-                        
-                        # Determine priority based on keywords
-                        priority = "medium"
-                        if any(keyword in requirement.lower() for keyword in ["security", "compliance", "certification", "mandatory", "required"]):
-                            priority = "high"
-                        elif any(keyword in requirement.lower() for keyword in ["optional", "preferred", "desirable"]):
-                            priority = "low"
-                        
-                        # Check for deadline hints
-                        deadline_hint = None
-                        deadline_match = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d+ days?|\d+ weeks?|\d+ months?)', requirement, re.IGNORECASE)
-                        if deadline_match:
-                            deadline_hint = deadline_match.group(1)
-                        
-                        questions.append({
-                            "qid": str(uuid.uuid4())[:8],
-                            "question_text": question_text,
-                            "question_type": "implicit",
-                            "section_ref": section_ref,
-                            "priority": priority,
-                            "deadline_hint": deadline_hint,
-                            "answer_guidance": f"Address: {requirement[:100]}...",
-                            "entities": [],
-                            "original_span": requirement[:200],
-                            "confidence": 0.7,
-                            "processing_mode": self.mode,
-                            "llm_model": None
-                        })
-            
-            # 3. Find submission/contact requirements
-            submission_patterns = [
-                r'(?:submit|send|deliver|provide).*?(?:to|at|via|through)\s+([^.!?]+[.!?])',
-                r'(?:contact|reach|email|call)\s+([^.!?]+[.!?])',
-                r'(?:proposal|bid|response).*?(?:deadline|due)\s+([^.!?]+[.!?])'
-            ]
-            
-            for pattern in submission_patterns:
-                matches = re.findall(pattern, chunk_text, re.IGNORECASE | re.MULTILINE)
-                for match in matches:
-                    submission = match.strip()
-                    if len(submission) > 10:
-                        questions.append({
-                            "qid": str(uuid.uuid4())[:8],
-                            "question_text": f"What is the submission requirement: {submission[:50]}...",
-                            "question_type": "implicit",
-                            "section_ref": section_ref,
-                            "priority": "high",
-                            "deadline_hint": None,
-                            "answer_guidance": "Follow submission guidelines carefully",
-                            "entities": [],
-                            "original_span": submission[:200],
-                            "confidence": 0.8,
-                            "processing_mode": self.mode,
-                            "llm_model": None
-                        })
-            
-            # Remove duplicates based on similar text
-            unique_questions = []
-            seen_texts = set()
-            
-            for q in questions:
-                text_key = q["question_text"].lower()[:50]  # First 50 chars for comparison
-                if text_key not in seen_texts:
-                    seen_texts.add(text_key)
-                    unique_questions.append(q)
-            
-            mode_indicator = "🛠️" if self.mode == "dev" else "🔄"
-            print(f"{mode_indicator} Extracted {len(unique_questions)} questions from {section_ref} using pattern-based approach")
-            return unique_questions
+            print(f"✅ Extracted {len(questions)} questions from text chunk")
+            return questions
             
         except Exception as e:
-            print(f"⚠️ Pattern extraction failed for {section_ref}: {e}")
-            # Return a basic question as fallback
-            return [{
-                "qid": str(uuid.uuid4())[:8],
-                "question_text": f"Please review and respond to requirements in {section_ref}",
-                "question_type": "implicit",
-                "section_ref": section_ref,
-                "priority": "medium",
-                "deadline_hint": None,
-                "answer_guidance": "Review the section carefully for specific requirements",
-                "entities": [],
-                "original_span": chunk_text[:200] if chunk_text else "",
-                "confidence": 0.5,
-                "processing_mode": self.mode,
-                "llm_model": None
-            }]
+            print(f"❌ Azure OpenAI extraction failed: {e}")
+            return []
     
-    def extract_questions_from_chunk(self, chunk_text: str, section_ref: str) -> List[Dict]:
-        """Extract questions from a text chunk using mode-appropriate method"""
-        if self.mode == "prod":
-            return self._extract_with_openai(chunk_text, section_ref)
-        else:
-            return self._extract_with_patterns(chunk_text, section_ref)
-    
-    def parse_rfp_text(self, text: str) -> List[Dict]:
-        """Chunk → extract per chunk → concat (no dedup)."""
-        print(f"🔍 Parsing RFP text in {self.mode.upper()} mode")
+    def process_rfp_pdf(self, pdf_path: str) -> List[str]:
+        """
+        Complete pipeline: PDF → Text → Chunks → Questions
+        """
+        print(f"🔄 Processing RFP: {Path(pdf_path).name}")
         
-        chunks = self.chunk_text(text)
+        # Step 1: Extract text from PDF
+        full_text = self.read_pdf_text(pdf_path)
+        
+        # Step 2: Determine processing strategy based on document size
+        char_count = len(full_text)
+        estimated_pages = char_count / 3000  # ~3000 chars per page
+        
         all_questions = []
         
-        for chunk in chunks:
-            try:
-                questions = self.extract_questions_from_chunk(chunk["content"], chunk["section_ref"])
-                all_questions.extend(questions)
-            except Exception as ex:
-                print(f"⚠️ Warning: chunk {chunk['section_ref']} skipped: {ex}")
+        if estimated_pages <= 30:
+            print(f"📄 Small RFP (~{estimated_pages:.1f} pages) - Processing with larger chunks")
+            chunks = self.chunk_text(full_text, max_chunk_size=15000)
+        else:
+            print(f"📚 Large RFP (~{estimated_pages:.1f} pages) - Using standard chunking")
+            chunks = self.chunk_text(full_text, max_chunk_size=10000)
         
-        print(f"✅ Total: {len(all_questions)} questions extracted in {self.mode.upper()} mode")
-        return all_questions
+        # Step 3: Extract questions from each chunk
+        for i, chunk in enumerate(chunks, 1):
+            print(f"🔍 Processing chunk {i}/{len(chunks)}")
+            chunk_questions = self.extract_questions_from_text(chunk)
+            all_questions.extend(chunk_questions)
+        
+        # Step 4: Remove duplicates while preserving order
+        seen = set()
+        unique_questions = []
+        
+        for question in all_questions:
+            # Create a normalized version for comparison (lowercase, no extra spaces)
+            normalized = ' '.join(question.lower().split())
+            if normalized not in seen and len(normalized) > 20:  # Filter very short questions
+                seen.add(normalized)
+                unique_questions.append(question)
+        
+        print(f"🎯 Final result: {len(unique_questions)} unique questions extracted")
+        print(f"   (Removed {len(all_questions) - len(unique_questions)} duplicates)")
+        
+        return unique_questions
     
-    def save_questions_to_excel(self, questions: List[Dict], filepath: str) -> str:
-        """Write Excel with exact columns order."""
-        # Create DataFrame from questions
-        df = pd.DataFrame(questions)
-        
-        # Create output DataFrame with required columns: Questions, Answer, Comments
-        df_out = pd.DataFrame({
-            'Questions': df['question_text'] if 'question_text' in df.columns else '',
-            'Answer': '',
-            'Comments': ''
-        })
-        
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-        
-        # Save to Excel
-        df_out.to_excel(filepath, index=False)
-        print(f"💾 Questions saved to: {filepath}")
-        return filepath
-    
-    def extract_and_export(self, text: str, excel_name: Optional[str] = None) -> Tuple[List[Dict], str]:
-        """Parse and export; return (questions, excel_path)."""
-        questions = self.parse_rfp_text(text)
-        
-        if excel_name is None:
-            mode_suffix = f"_{self.mode}" if self.mode == "prod" else ""
-            excel_name = f"rfp_questions{mode_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        
-        if not excel_name.endswith(".xlsx"):
-            excel_name += ".xlsx"
-        
-        filepath = os.path.join("outputs", excel_name)
-        self.save_questions_to_excel(questions, filepath)
-        
-        return questions, filepath
-    
-    def extract_from_pdf(self, pdf_path: str, excel_name: Optional[str] = None) -> Tuple[List[Dict], str]:
-        """Convenience: read PDF → extract_and_export."""
-        text = self.read_pdf_text(pdf_path)
-        if not text:
-            raise ValueError("PDF appears empty or unreadable.")
-        return self.extract_and_export(text, excel_name)
-    
-    def parse_excel(self, excel_path: str) -> List[Dict]:
+    def move_pdf_to_processed(self, pdf_path: str) -> str:
         """
-        Parse existing Excel RFP file to extract Q&A pairs.
+        Ensure PDF ends up in data/past_RFPs_pdf after processing
+        - If PDF was in new_RFPs: MOVE it to past_RFPs_pdf (remove from new_RFPs)  
+        - If PDF was elsewhere: COPY it to past_RFPs_pdf (keep original)
         
         Args:
-            excel_path: Path to existing Excel RFP file
+            pdf_path: Current path of the PDF file
             
         Returns:
-            List[Dict]: List of Q&A pairs with question, answer, category etc.
+            str: Path of the PDF in past_RFPs_pdf
         """
-        try:
-            df = pd.read_excel(excel_path)
-            qa_pairs = []
+        pdf_path = Path(pdf_path)
+        
+        # Determine destination path in past_RFPs_pdf
+        destination = self.past_rfps_dir / pdf_path.name
+        
+        # Handle filename conflicts in destination
+        counter = 1
+        while destination.exists():
+            stem = pdf_path.stem
+            suffix = pdf_path.suffix
+            destination = self.past_rfps_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+        
+        # Check if PDF is currently in new_RFPs (using absolute paths for comparison)
+        pdf_absolute = pdf_path.resolve()
+        new_rfps_absolute = self.new_rfps_dir.resolve()
+        
+        if pdf_absolute.parent == new_rfps_absolute:
+            # PDF is in new_RFPs → MOVE it (remove from new_RFPs)
+            shutil.move(str(pdf_path), str(destination))
+            print(f"📦 Moved PDF: {pdf_path.name} → data/past_RFPs_pdf/ (removed from new_RFPs)")
+        else:
+            # PDF is elsewhere → COPY it (keep original)
+            shutil.copy2(str(pdf_path), str(destination))
+            print(f"📄 Copied PDF: {pdf_path.name} → data/past_RFPs_pdf/ (original kept at {pdf_path.parent.name})")
+        
+        return str(destination)
+    
+    def create_excel_output(self, questions: List[str], pdf_name: str) -> str:
+        """
+        Create Excel file with questions in data/parsed_RFPs directory
+        
+        Args:
+            questions: List of extracted questions
+            pdf_name: Original PDF filename for naming the Excel file
             
-            # Try to find question and answer columns (flexible matching)
-            question_cols = [col for col in df.columns if 'question' in col.lower()]
-            answer_cols = [col for col in df.columns if 'answer' in col.lower() or 'response' in col.lower()]
+        Returns:
+            str: Path to created Excel file
+        """
+        # Create DataFrame with required structure
+        df = pd.DataFrame({
+            'Question': questions,
+            'Answer': [''] * len(questions),  # Empty column
+            'Comments': [''] * len(questions)  # Empty column
+        })
+        
+        # Generate Excel filename based on PDF name
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        pdf_stem = Path(pdf_name).stem
+        excel_filename = f"RFP_Questions_{pdf_stem}_{timestamp}.xlsx"
+        excel_path = self.parsed_rfps_dir / excel_filename
+        
+        # Save to Excel
+        df.to_excel(excel_path, index=False)
+        
+        print(f"💾 Excel created: {excel_filename}")
+        print(f"📍 Location: data/parsed_RFPs/")
+        print(f"📊 Contains {len(questions)} questions ready for answers")
+        
+        return str(excel_path)
+    
+    def parse_pdf_to_excel(self, pdf_path: str, manage_files: bool = False) -> tuple[str, str]:
+        """
+        Complete pipeline: PDF → Questions → Excel with optional file management
+        
+        Args:
+            pdf_path: Path to input PDF file
+            manage_files: If True, move PDF and save Excel. If False, just return paths without file operations
             
-            if not question_cols:
-                print("⚠️  No question column found, trying first column")
-                question_col = df.columns[0] if len(df.columns) > 0 else None
-            else:
-                question_col = question_cols[0]
-                
-            if not answer_cols:
-                print("⚠️  No answer column found, trying second column")  
-                answer_col = df.columns[1] if len(df.columns) > 1 else None
-            else:
-                answer_col = answer_cols[0]
+        Returns:
+            tuple[str, str]: (original_pdf_path or moved_pdf_path, excel_path or temp_excel_path)
+        """
+        pdf_path = Path(pdf_path)
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        
+        print(f"\n🚀 Starting RFP processing pipeline")
+        print(f"📥 Input PDF: {pdf_path.name}")
+        
+        # Extract questions from PDF
+        questions = self.process_rfp_pdf(str(pdf_path))
+        
+        if not questions:
+            raise ValueError("No questions could be extracted from the PDF")
+        
+        if manage_files:
+            # Create Excel output in data/parsed_RFPs directory
+            excel_path = self.create_excel_output(questions, pdf_path.name)
             
-            if not question_col:
-                print("❌ Cannot identify question column")
-                return []
+            # Move PDF to data/past_RFPs_pdf directory (if it was in data/new_RFPs)
+            moved_pdf_path = self.move_pdf_to_processed(str(pdf_path))
             
-            print(f"📋 Using columns - Question: '{question_col}', Answer: '{answer_col or 'None'}'")
+            print(f"\n🎉 RFP processing pipeline complete!")
+            print(f"📦 PDF moved to: data/past_RFPs_pdf/{Path(moved_pdf_path).name}")
+            print(f"📤 Excel created: data/parsed_RFPs/{Path(excel_path).name}")
+            print(f"❓ Questions extracted: {len(questions)}")
             
-            for index, row in df.iterrows():
-                question = str(row.get(question_col, '')).strip()
-                answer = str(row.get(answer_col, '')) if answer_col else ''
-                
-                if question and question.lower() not in ['nan', 'none', '']:
-                    qa_pair = {
-                        'question': question,
-                        'answer': answer.strip(),
-                        'question_number': index + 1,
-                        'category': str(row.get('Category', row.get('category', 'General'))),
-                        'source_file': Path(excel_path).name,
-                        'extracted_at': datetime.now().isoformat()
-                    }
-                    qa_pairs.append(qa_pair)
+            return moved_pdf_path, excel_path
+        else:
+            # Just extract questions without file management
+            print(f"\n🎉 RFP question extraction complete!")
+            print(f"📄 PDF analyzed: {pdf_path.name}")
+            print(f"❓ Questions extracted: {len(questions)}")
+            print("📝 No files moved or created (manage_files=False)")
             
-            print(f"✅ Extracted {len(qa_pairs)} Q&A pairs from Excel")
-            return qa_pairs
-            
-        except Exception as e:
-            print(f"❌ Error parsing Excel file: {e}")
-            return []
+            # Return the questions as a list and original PDF path
+            return str(pdf_path), questions
 
 
-# Backward compatibility functions (using dev mode by default)
-def read_pdf_text(pdf_path: str) -> str:
-    """Legacy function - uses dev mode for backward compatibility"""
-    parser = RFPParser(mode="dev")
-    return parser.read_pdf_text(pdf_path)
-
-def chunk_text(text: str, max_chunk_size: int = 4000) -> List[Dict[str, str]]:
-    """Legacy function - uses dev mode for backward compatibility"""
-    parser = RFPParser(mode="dev")
-    return parser.chunk_text(text, max_chunk_size)
-
-def call_pattern_extraction(chunk_text: str, section_ref: str) -> List[Dict]:
-    """Legacy function - uses dev mode for backward compatibility"""
-    parser = RFPParser(mode="dev")
-    return parser._extract_with_patterns(chunk_text, section_ref)
-
-def call_llm_json(chunk_text: str, section_ref: str, model_name: str = "pattern", openai_api_key: Optional[str] = None) -> List[Dict]:
-    """Legacy function with mode detection"""
-    mode = "prod" if (openai_api_key and model_name.startswith("gpt")) else "dev"
-    parser = RFPParser(mode=mode, model=model_name if mode == "prod" else None)
-    return parser.extract_questions_from_chunk(chunk_text, section_ref)
-
-def parse_rfp_text(text: str, model_name: str = "pattern", openai_api_key: Optional[str] = None) -> List[Dict]:
-    """Legacy function with mode detection"""
-    mode = "prod" if (openai_api_key and model_name.startswith("gpt")) else "dev"
-    parser = RFPParser(mode=mode, model=model_name if mode == "prod" else None)
-    return parser.parse_rfp_text(text)
-
-def save_questions_to_excel(questions: List[Dict], filepath: str) -> str:
-    """Legacy function"""
-    parser = RFPParser(mode="dev")
-    return parser.save_questions_to_excel(questions, filepath)
-
-def extract_and_export(text: str, excel_name: Optional[str] = None, model_name: str = "pattern", openai_api_key: Optional[str] = None) -> Tuple[List[Dict], str]:
-    """Legacy function with mode detection"""
-    mode = "prod" if (openai_api_key and model_name.startswith("gpt")) else "dev"
-    parser = RFPParser(mode=mode, model=model_name if mode == "prod" else None)
-    return parser.extract_and_export(text, excel_name)
-
-def extract_from_pdf(pdf_path: str, excel_name: Optional[str] = None, model_name: str = "pattern", openai_api_key: Optional[str] = None) -> Tuple[List[Dict], str]:
-    """Legacy function with mode detection"""
-    mode = "prod" if (openai_api_key and model_name.startswith("gpt")) else "dev"
-    parser = RFPParser(mode=mode, model=model_name if mode == "prod" else None)
-    return parser.extract_from_pdf(pdf_path, excel_name)
+# Convenience function for direct usage
+def extract_rfp_questions(pdf_path: str, manage_files: bool = False) -> tuple[str, any]:
+    """
+    Convenience function to extract questions from RFP PDF with optional file management
+    
+    Args:
+        pdf_path: Path to RFP PDF file
+        manage_files: If True, move files and create Excel. If False, just extract questions
+        
+    Returns:
+        tuple[str, any]: If manage_files=True: (moved_pdf_path, excel_path)
+                        If manage_files=False: (original_pdf_path, questions_list)
+    """
+    parser = RFPParser()
+    return parser.parse_pdf_to_excel(pdf_path, manage_files=manage_files)
 
 
-# Test function for both modes
-def test_rfp_parser_modes():
-    """Test both dev and prod modes"""
-    print("🧪 Testing RFP Parser - Both Modes")
+# Test function
+def test_rfp_parser():
+    """Test function for RFP parser"""
+    print("🧪 Testing RFP Parser")
     print("=" * 50)
     
     # Sample RFP text for testing
     sample_rfp = """
-    Section 1: Introduction
-    The vendor must provide a comprehensive security solution. What are your certifications?
+    1. INTRODUCTION
+    The City of San Francisco requires a comprehensive IT support solution.
     
-    Section 2: Requirements
-    Bidders shall submit their proposals by December 31, 2024.
-    Provide details of your backup and disaster recovery plan.
-    What is your uptime SLA guarantee?
+    2. REQUIREMENTS
+    2.1 The contractor shall provide 24/7 technical support.
+    2.2 All support staff must be certified in relevant technologies.
+    2.3 Response time for critical issues must not exceed 2 hours.
+    2.4 The contractor must maintain liability insurance of $1 million minimum.
     
-    Section 3: Submission
-    All proposals must be submitted to procurement@company.com by 5 PM EST.
+    3. CONTRACT TERMS
+    The initial contract term is 3 years with two 1-year extension options.
+    No substitutions or equivalent products will be accepted.
+    
+    4. SUBMISSION REQUIREMENTS
+    All proposals must be submitted by December 31, 2024, at 5:00 PM PST.
+    Late submissions will not be accepted.
     """
     
-    print("🛠️ DEVELOPMENT MODE TEST")
-    print("-" * 30)
-    dev_parser = RFPParser(mode="dev")
-    dev_questions = dev_parser.parse_rfp_text(sample_rfp)
-    print(f"Dev mode extracted: {len(dev_questions)} questions")
+    # Test question extraction
+    parser = RFPParser()
+    questions = parser.extract_questions_from_text(sample_rfp)
     
-    if settings.OPENAI_API_KEY:
-        print("\n🚀 PRODUCTION MODE TEST")
-        print("-" * 30)
-        prod_parser = RFPParser(mode="prod")
-        prod_questions = prod_parser.parse_rfp_text(sample_rfp)
-        print(f"Prod mode extracted: {len(prod_questions)} questions")
+    print(f"✅ Extracted {len(questions)} questions from sample text:")
+    for i, question in enumerate(questions, 1):
+        print(f"  {i}. {question}")
+    
+    print("\n🎉 RFP Parser test complete!")
+
+
+def test_rfp_workflow():
+    """Test complete RFP workflow with file management"""
+    print("🧪 Testing Complete RFP Workflow")
+    print("=" * 60)
+    
+    # Create a sample PDF file in data/new_RFPs for testing
+    parser = RFPParser()
+    
+    # Create sample PDF content as text file (for demonstration)
+    sample_pdf_path = parser.new_rfps_dir / "sample_rfp_test.txt"
+    sample_content = """
+    SAMPLE RFP - CITY OF SAN FRANCISCO
+    
+    1. TECHNICAL REQUIREMENTS
+    - The contractor shall provide 24/7 monitoring services
+    - All systems must have 99.9% uptime guarantee  
+    - Response time for critical alerts must be under 15 minutes
+    
+    2. STAFFING REQUIREMENTS  
+    - All technicians must hold relevant certifications
+    - Minimum 5 years experience required for senior staff
+    - On-site presence required during business hours
+    
+    3. INSURANCE AND LIABILITY
+    - General liability insurance minimum $2 million
+    - Professional liability coverage required
+    - Certificate of insurance must be provided
+    """
+    
+    # Write sample file
+    with open(sample_pdf_path, 'w', encoding='utf-8') as f:
+        f.write(sample_content)
+    
+    print(f"📄 Created sample file: {sample_pdf_path.name}")
+    print(f"📍 Location: data/new_RFPs/")
+    
+    # Test question extraction from text
+    questions = parser.extract_questions_from_text(sample_content)
+    
+    if questions:
+        print(f"\n✅ Extracted {len(questions)} questions:")
+        for i, question in enumerate(questions, 1):
+            print(f"  {i}. {question}")
+        
+        # Test Excel creation
+        excel_path = parser.create_excel_output(questions, sample_pdf_path.name)
+        
+        # Test file movement
+        moved_path = parser.move_pdf_to_processed(str(sample_pdf_path))
+        
+        print(f"\n🎉 Workflow test complete!")
+        print(f"📦 File moved: {Path(moved_path).name}")
+        print(f"📊 Excel created: {Path(excel_path).name}")
+        
+        return moved_path, excel_path
     else:
-        print("\n⚠️ PRODUCTION MODE SKIPPED")
-        print("Set OPENAI_API_KEY in .env to test production mode")
-    
-    print("\n🎉 RFP Parser mode testing complete!")
+        print("❌ No questions extracted - test failed")
+        return None, None
 
 
 if __name__ == "__main__":
-    test_rfp_parser_modes()
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "workflow":
+        test_rfp_workflow()
+    else:
+        test_rfp_parser()

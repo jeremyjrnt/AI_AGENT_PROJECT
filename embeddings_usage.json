@@ -202,8 +202,20 @@
         "Will the Contractor maintain the subscription and provide support and maintenance services for the full term?",
         "..."
       ]
+    },
+    {
+      "timestamp": "2025-08-20T17:31:02.968893",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
     }
   ],
-  "total_tokens": 5691,
-  "total_requests": 16
+  "total_tokens": 5694,
+  "total_requests": 17
 }

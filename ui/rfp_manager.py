@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import sys
 import shutil
+import base64
 
 # Add project root to Python path for imports
 project_root = Path(__file__).parent.parent
@@ -21,7 +22,7 @@ project_root = Path(__file__).parent.parent
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from parsers.rfp_parser import extract_from_pdf
+from parsers.rfp_parser import extract_rfp_questions
 from qdrant.client import get_qdrant_client, INTERNAL_COLLECTION
 from sentence_transformers import SentenceTransformer
 import settings
@@ -218,22 +219,65 @@ def parse_selected_rfp(selected_file):
     """Parse the selected RFP file and return questions"""
     rfp_path = project_root / "data" / "new_RFPs" / selected_file
     try:
-        questions, excel_path = extract_from_pdf(str(rfp_path))
+        # Use the new RFP parser function without file management
+        original_pdf_path, questions_list = extract_rfp_questions(str(rfp_path), manage_files=False)
         
-        # Convert to DataFrame with required columns including validator
+        # Convert questions list to DataFrame directly
         df_data = []
-        for q in questions:
+        for question in questions_list:
             df_data.append({
-                'Questions': q.get('question_text', ''),
-                'Answer': '',  # Empty initially
-                'Comments': '',  # Empty initially
+                'Questions': str(question),
+                'Answer': '',  # Always start empty for user input
+                'Comments': '',  # Always start empty for user input
                 'Validator Name': ''  # Empty initially
             })
         
-        return pd.DataFrame(df_data)
+        # Create DataFrame with explicit string types
+        df = pd.DataFrame(df_data)
+        # Ensure all columns are explicitly string type
+        df = df.astype({
+            'Questions': 'string',
+            'Answer': 'string', 
+            'Comments': 'string',
+            'Validator Name': 'string'
+        })
+        
+        return df
     except Exception as e:
         st.error(f"Error parsing RFP: {e}")
         return None
+
+
+def show_pdf_viewer(pdf_file_path):
+    """Display PDF file in the Streamlit interface"""
+    try:
+        with open(pdf_file_path, "rb") as f:
+            pdf_bytes = f.read()
+            
+        # Convert to base64 for embedding
+        pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # Create PDF viewer using iframe
+        pdf_display = f"""
+        <iframe src="data:application/pdf;base64,{pdf_base64}" 
+                width="100%" 
+                height="600px" 
+                style="border: 1px solid #ccc; border-radius: 5px;">
+        </iframe>
+        """
+        
+        st.markdown("### PDF Preview", help="Scroll through the document to review its content before parsing")
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        # Add file info
+        file_size = len(pdf_bytes) / (1024 * 1024)  # Convert to MB
+        st.info(f"📄 **File**: {Path(pdf_file_path).name} | **Size**: {file_size:.2f} MB")
+        
+        return True
+    except Exception as e:
+        st.error(f"Could not display PDF: {e}")
+        st.info("💡 The file might be corrupted or not a valid PDF format")
+        return False
 
 
 def pre_complete_rfp(current_df, mode="dev"):
@@ -387,29 +431,29 @@ def main():
 
 def show_how_to_use():
     """How to Use guide interface"""
-    st.title("📚 How to Use this RFP Manager")
+    st.title("How to Use this RFP Manager")
     st.markdown("---")
     
     st.markdown("""
-    ## 🚀 Complete Guide to RFP Management System
+    ## Complete Guide to RFP Management System
     
-    ### 📤 Step 1: Upload RFP Files
+    ### Step 1: Upload RFP Files
     - **Drag & Drop**: Use the sidebar file uploader to drag PDF files
     - **Manual**: Add PDF files directly to the `data/new_RFPs/` folder
     - **Supported**: Only PDF format is supported for RFP processing
     
-    ### 📚 Step 1.5: Build Knowledge Base (Optional)
+    ### Step 1.5: Build Knowledge Base (Optional)
     - **Upload Internal Docs**: Use the "Knowledge Base Management" section
     - **Supported Formats**: .txt, .md, .markdown files or .zip archives
     - **Auto-Index**: Documents are automatically indexed in vector database
     - **Smart Search**: Indexed documents will be used for AI-powered answer suggestions
     
-    ### 📋 Step 2: Process RFP
+    ### Step 2: Process RFP
     1. **Select**: Choose an RFP PDF from the main interface dropdown
     2. **Parse**: Click "Parse RFP" to extract questions automatically
     3. **Review**: Check the extracted questions for accuracy
     
-    ### 🤖 Step 2.5: ReAct AI Pre-completion (NEW!)
+    ### Step 2.5: ReAct AI Pre-completion (NEW!)
     - **Pre-complete**: Click "Pre-complete" to auto-fill answers using ReAct AI
     - **Intelligent Reasoning**: Uses ReAct (Reasoning + Acting) pattern with Ollama
     - **Three Smart Tools**: Automatically chooses between Internal Docs + Past RFPs + Web Search
@@ -424,7 +468,7 @@ def show_how_to_use():
     - **Validator Names**: Enter validator names for each Q&A trio for accountability
     - **Real-time Editing**: Changes are saved automatically as you type
     
-    ### 💾 Step 4: Save & Submit
+    ### Step 4: Save & Submit
     - **Save to Excel**: Export your work to the outputs folder (draft version)
     - **Submit & Index**: Complete workflow with submitter name:
       - Saves Excel file with all answers and metadata
@@ -432,7 +476,7 @@ def show_how_to_use():
       - Archives RFP for future reference
       - Triggers automatic cleanup of old RFPs if needed
     
-    ### 🔗 Automatic Vector Database Integration
+    ### Automatic Vector Database Integration
     - **Smart Indexing**: Each question becomes a searchable vector in Qdrant
     - **Rich Metadata**: Answers, comments, validator names, submitter info, and completion date stored
     - **Future AI Enhancement**: Completed RFPs improve future pre-completion accuracy
@@ -440,7 +484,7 @@ def show_how_to_use():
     - **Accountability**: Full traceability of who validated each Q&A and who submitted the RFP
     - **Age Management**: Automatic cleanup of old RFPs (configurable, default 20 RFPs)
     
-    ### 🎯 Key Features Overview:
+    ### Key Features Overview:
     """)
     
     # Feature cards
@@ -448,22 +492,22 @@ def show_how_to_use():
     
     with col1:
         st.markdown("""
-        #### 🔧 Core Features
-        - ✅ **Drag & Drop Upload**: Easy PDF file management
-        - 📖 **Smart Parsing**: Automatic question extraction from PDFs
-        - 📝 **Interactive Editing**: Real-time table editing with validation
-        - 💾 **Excel Export**: Professional output formatting
-        - 🔄 **Reset Function**: Start over with original parsed questions
+        #### Core Features
+        - **Drag & Drop Upload**: Easy PDF file management
+        - **Smart Parsing**: Automatic question extraction from PDFs
+        - **Interactive Editing**: Real-time table editing with validation
+        - **Excel Export**: Professional output formatting
+        - **Reset Function**: Start over with original parsed questions
         """)
         
     with col2:
         st.markdown("""
-        #### 🤖 AI Features
-        - 🧠 **ReAct AI Pre-completion**: Auto-fill answers using intelligent reasoning
-        - 🔍 **Multi-Tool Intelligence**: AI chooses best sources per question
-        - 📊 **Progress Tracking**: Live statistics and completion percentage
-        - 🎯 **Validation & Accountability**: Track validator names and submitter info
-        - 🗄️ **Vector Database**: Smart indexing for future improvements
+        #### AI Features
+        - **ReAct AI Pre-completion**: Auto-fill answers using intelligent reasoning
+        - **Multi-Tool Intelligence**: AI chooses best sources per question
+        - **Progress Tracking**: Live statistics and completion percentage
+        - **Validation & Accountability**: Track validator names and submitter info
+        - **Vector Database**: Smart indexing for future improvements
         """)
     
     st.markdown("---")
@@ -530,7 +574,7 @@ def show_rfp_manager():
     st.sidebar.header("File Management")
     
     # File upload section for RFPs
-    st.sidebar.subheader("📤 Upload New RFPs")
+    st.sidebar.subheader("Upload New RFPs")
     uploaded_files = st.sidebar.file_uploader(
         "Drag and drop PDF files here",
         type=['pdf'],
@@ -542,7 +586,7 @@ def show_rfp_manager():
     if uploaded_files:
         uploaded_count = handle_file_upload(uploaded_files)
         if uploaded_count > 0:
-            st.sidebar.success(f"✅ Uploaded {uploaded_count} PDF file(s)")
+            st.sidebar.success(f"Uploaded {uploaded_count} PDF file(s)")
             st.rerun()  # Refresh to show new files
     
     st.sidebar.markdown("---")
@@ -599,7 +643,7 @@ def show_rfp_manager():
                 st.metric("Total Processed", stats['total_rfps_processed'])
             
             with col2:
-                cleanup_status = "✅ On" if stats['cleanup_enabled'] else "❌ Off"
+                cleanup_status = "On" if stats['cleanup_enabled'] else "Off"
                 st.metric("Auto Cleanup", cleanup_status)
                 st.metric("Max Age Diff", stats['max_age_difference'])
             
@@ -652,7 +696,7 @@ def show_rfp_manager():
             options=["dev", "prod"],
             format_func=lambda x: {
                 "dev": "Development (Free Ollama)",
-                "prod": "🚀 Production (OpenAI)"
+                "prod": "Production (OpenAI)"
             }[x],
             help="Dev mode uses free local Ollama models. Prod mode uses OpenAI for better quality.",
             key="ai_mode_selector"
@@ -682,8 +726,8 @@ def show_rfp_manager():
                 st.metric("Total Processed", stats['total_rfps_processed'])
             
             # Cleanup settings
-            st.sidebar.write(f"Cleanup: {'✅ Enabled' if stats['cleanup_enabled'] else '❌ Disabled'}")
-            st.sidebar.write(f"⏰ Max Age: {stats['max_age_difference']} RFPs")
+            st.sidebar.write(f"Cleanup: {'Enabled' if stats['cleanup_enabled'] else 'Disabled'}")
+            st.sidebar.write(f"Max Age: {stats['max_age_difference']} RFPs")
             
             # Management buttons
             if st.sidebar.button("Inspect Collection", help="View RFP age distribution"):
@@ -695,7 +739,7 @@ def show_rfp_manager():
                 with st.spinner("🧹 Cleaning up old RFPs..."):
                     cleanup_count = tracker.cleanup_old_rfps(force=True)
                     if cleanup_count > 0:
-                        st.sidebar.success(f"✅ Cleaned {cleanup_count} documents")
+                        st.sidebar.success(f"Cleaned {cleanup_count} documents")
                     else:
                         st.sidebar.info("No cleanup needed")
                     st.rerun()
@@ -720,40 +764,64 @@ def show_rfp_manager():
     
     # Step 1: RFP File Selection
     if not rfp_files:
-        st.warning("🚫 No RFP files found. Please upload PDF files using the sidebar.")
+        st.warning("No RFP files found. Please upload PDF files using the sidebar.")
         st.info("Use the **Upload New RFPs** section in the sidebar to add PDF files.")
     else:
         # RFP File Selection in main body
-        col1, col2 = st.columns([3, 1])
+        st.subheader("Step 1: Select RFP File")
+        selected_file = st.selectbox(
+            "Choose an RFP PDF file to process:",
+            options=rfp_files,
+            help="Select a PDF file from the uploaded RFPs to preview and parse",
+            key="main_rfp_selector"
+        )
         
-        with col1:
-            st.subheader("Step 1: Select RFP File")
-            selected_file = st.selectbox(
-                "Choose an RFP PDF file to process:",
-                options=rfp_files,
-                help="Select a PDF file from the uploaded RFPs to parse and edit",
-                key="main_rfp_selector"
-            )
+        # Step 2: PDF Preview
+        if selected_file:
+            st.markdown("---")
+            st.subheader("Step 2: Preview PDF Document")
             
-        with col2:
-            st.subheader("🚀 Step 2: Parse")
-            if st.button("📖 Parse RFP", type="primary", use_container_width=True):
-                with st.spinner("Parsing RFP file..."):
-                    df = parse_selected_rfp(selected_file)
-                    
-                    if df is not None:
-                        st.session_state.rfp_data = df
-                        st.session_state.current_file = selected_file
-                        st.success(f"✅ Successfully parsed {len(df)} questions from {selected_file}")
-                        st.rerun()  # Refresh to show editing interface
-                    else:
-                        st.error("❌ Failed to parse the RFP file. Please check the file format.")
+            # Create columns for preview and parse button
+            col1, col2 = st.columns([4, 1])
+            
+            with col1:
+                rfp_path = project_root / "data" / "new_RFPs" / selected_file
+                
+                # Show/hide PDF viewer toggle
+                if 'show_pdf' not in st.session_state:
+                    st.session_state.show_pdf = False
+                
+                if st.button("📖 Show PDF Preview", use_container_width=True):
+                    st.session_state.show_pdf = not st.session_state.show_pdf
+                
+                # Display PDF if toggled on
+                if st.session_state.show_pdf:
+                    with st.spinner("Loading PDF preview..."):
+                        show_pdf_viewer(str(rfp_path))
+            
+            with col2:
+                st.subheader("Step 3: Parse")
+                st.write("")  # Add some spacing
+                
+                # Parse button
+                if st.button("🚀 Parse RFP", type="primary", use_container_width=True):
+                    with st.spinner("Parsing RFP file..."):
+                        df = parse_selected_rfp(selected_file)
+                        
+                        if df is not None:
+                            st.session_state.rfp_data = df
+                            st.session_state.current_file = selected_file
+                            st.session_state.show_pdf = False  # Hide PDF after parsing
+                            st.success(f"Successfully parsed {len(df)} questions from {selected_file}")
+                            st.rerun()  # Refresh to show editing interface
+                        else:
+                            st.error("Failed to parse the RFP file. Please check the file format.")
         
         st.markdown("---")
     
-    # Step 3: Editing Interface (only shown after parsing)
+    # Step 4: Editing Interface (only shown after parsing)
     if 'rfp_data' in st.session_state:
-        st.header(f"Step 3: Edit Questions & Answers")
+        st.header(f"Step 4: Edit Questions & Answers")
         st.subheader(f"Current File: {st.session_state.current_file}")
         
         # Display editable table
@@ -806,7 +874,7 @@ def show_rfp_manager():
             mode_label = "Development" if current_mode == "dev" else "Production"
             
             if st.button(f"Pre-complete ({mode_label})", type="primary", help=f"Auto-fill answers using ReAct AI in {current_mode.upper()} mode (Internal Docs + RFP History + Web Search)"):
-                with st.spinner(f"🤖 Pre-completing RFP using ReAct AI in {current_mode.upper()} mode..."):
+                with st.spinner(f"Pre-completing RFP using ReAct AI in {current_mode.upper()} mode..."):
                     completed_df = pre_complete_rfp(edited_df, current_mode)
                     st.session_state.rfp_data = completed_df
                     st.rerun()
@@ -822,7 +890,7 @@ def show_rfp_manager():
                 st.rerun()
         
         with col2:
-            if st.button("💾 Save to Excel", type="secondary"):
+            if st.button("Save to Excel", type="secondary"):
                 # Save to outputs folder
                 outputs_folder = project_root / "outputs"
                 outputs_folder.mkdir(exist_ok=True)
@@ -842,11 +910,11 @@ def show_rfp_manager():
                 key="submitter_name_input"
             )
             
-            if st.button("✅ Submit & Index", type="primary", help="Complete RFP: Save, Index in Vector DB, and Archive"):
+            if st.button("Submit & Index", type="primary", help="Complete RFP: Save, Index in Vector DB, and Archive"):
                 if not submitter_name or not submitter_name.strip():
                     st.error("Please enter the submitter name before submitting")
                 else:
-                    with st.spinner("🚀 Submitting RFP and indexing in vector database..."):
+                    with st.spinner("Submitting RFP and indexing in vector database..."):
                         success, result, excel_file, indexed_count = submit_completed_rfp(
                             st.session_state.current_file, 
                             edited_df, 
@@ -854,7 +922,7 @@ def show_rfp_manager():
                         )
                         if success:
                             st.success(f"""
-                            ✅ **RFP Successfully Submitted!**
+                            **RFP Successfully Submitted!**
                             
                             👤 **Submitted by**: {submitter_name.strip()}
                             📁**Archived as**: {result}
@@ -870,14 +938,14 @@ def show_rfp_manager():
                                 del st.session_state.current_file
                             st.rerun()
                         else:
-                            st.error(f"❌ Failed to submit RFP: {result}")
+                            st.error(f"Failed to submit RFP: {result}")
         
         # Second row of buttons
         st.markdown("---")
         col4, col5, col6 = st.columns(3)
         
         with col4:
-            if st.button("🔄 Reset"):
+            if st.button("Reset"):
                 # Re-parse the original file
                 with st.spinner("Resetting..."):
                     df = parse_selected_rfp(st.session_state.current_file)
@@ -886,14 +954,14 @@ def show_rfp_manager():
                         st.rerun()
         
         with col5:
-            if st.button("📊 Statistics"):
+            if st.button("Statistics"):
                 total_questions = len(edited_df)
                 answered_yes = len(edited_df[edited_df['Answer'] == 'Yes'])
                 answered_no = len(edited_df[edited_df['Answer'] == 'No'])
                 unanswered = len(edited_df[edited_df['Answer'] == ''])
                 
                 st.info(f"""
-                📈**Statistics:**
+                **Statistics:**
                 - Total Questions: {total_questions}
                 - Answered 'Yes': {answered_yes}
                 - Answered 'No': {answered_no}
@@ -905,10 +973,10 @@ def show_rfp_manager():
             # Placeholder for future features
             pass
         # Welcome message
-        st.info("👆 Select an RFP file from the sidebar to get started")
+        st.info("Select a RFP file from the sidebar to get started")
         
         # Welcome message
-        st.info("👆 Select an RFP file from the main interface to get started")
+        st.info("Select a RFP file from the main interface to get started")
 
 
 if __name__ == "__main__":
