@@ -47,7 +47,7 @@ class ReactRFPRetriever:
         # Auto-select model based on mode
         if model is None:
             if self.mode == "prod":
-                self.model = "gpt-4o-mini"  # Fast and cost-effective for production
+                self.model = settings.AZURE_OPENAI_CHAT_DEPLOYMENT or "team11-gpt4o"  # Use Azure deployment name
             else:
                 self.model = "qwen2:0.5b"   # Free local model for development
         else:
@@ -66,24 +66,27 @@ class ReactRFPRetriever:
     def _initialize_llm(self):
         """Initialize LLM based on development or production mode"""
         if self.mode == "prod":
-            # Production mode: Use OpenAI
+            # Production mode: Use Azure OpenAI
             try:
-                from langchain_openai import ChatOpenAI
+                from langchain_openai import AzureChatOpenAI
                 
-                if not settings.OPENAI_API_KEY:
-                    raise ValueError("OpenAI API key not found. Set OPENAI_API_KEY in .env file for production mode.")
+                if not settings.AZURE_OPENAI_API_KEY:
+                    raise ValueError("Azure OpenAI API key not found. Set AZURE_OPENAI_API_KEY in .env file for production mode.")
                 
-                self.llm = ChatOpenAI(
-                    model=self.model,
+                self.llm = AzureChatOpenAI(
+                    azure_deployment=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
+                    api_version=settings.AZURE_OPENAI_API_VERSION,
+                    azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                    api_key=settings.AZURE_OPENAI_API_KEY,
                     temperature=0.1,
-                    api_key=settings.OPENAI_API_KEY
+                    model_name=settings.AZURE_OPENAI_CHAT_DEPLOYMENT
                 )
-                print(f"🚀 Production Mode: Using OpenAI model {self.model}")
+                print(f"🚀 Production Mode: Using Azure OpenAI model {settings.AZURE_OPENAI_CHAT_DEPLOYMENT}")
                 
             except ImportError:
                 raise ImportError("langchain_openai not installed. Run: pip install langchain-openai")
             except Exception as e:
-                raise Exception(f"Failed to initialize OpenAI: {e}")
+                raise Exception(f"Failed to initialize Azure OpenAI: {e}")
         
         else:
             # Development mode: Use Ollama (free)
@@ -106,9 +109,23 @@ class ReactRFPRetriever:
     def _initialize_embeddings(self):
         """Initialize embeddings based on settings and mode"""
         try:
-            # Use settings to determine embedding provider
-            if settings.is_openai_provider() and self.mode == "prod":
-                # Production mode with OpenAI embeddings
+            # Use Azure OpenAI embeddings if in production mode and configured
+            if self.mode == "prod" and settings.is_azure_openai_configured():
+                # Production mode with Azure OpenAI embeddings
+                try:
+                    from langchain_openai import AzureOpenAIEmbeddings
+                    self.embedding_model = AzureOpenAIEmbeddings(
+                        azure_deployment=settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+                        api_version=settings.AZURE_OPENAI_API_VERSION,
+                        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                        api_key=settings.AZURE_OPENAI_API_KEY
+                    )
+                    print(f"📊 Production: Using Azure OpenAI embeddings ({settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT})")
+                except ImportError:
+                    print("⚠️ langchain_openai not available, falling back to HuggingFace")
+                    self._init_huggingface_embeddings()
+            elif settings.is_openai_provider() and settings.is_openai_configured() and self.mode == "prod":
+                # Fallback to standard OpenAI embeddings if Azure not configured
                 try:
                     from langchain_openai import OpenAIEmbeddings
                     self.embedding_model = OpenAIEmbeddings(
@@ -289,18 +306,141 @@ class ReactRFPRetriever:
             print(f"❌ Failed to setup ReAct agent: {e}")
             raise
     
+    def _parse_structured_response(self, response: str) -> Dict[str, str]:
+        """
+        Parse structured response to extract Answer (Yes/No) and Comments
+        Even handles responses with errors or incomplete parsing
+        
+        Args:
+            response: Raw response from the LLM
+            
+        Returns:
+            Dict with 'answer' and 'comments' keys
+        """
+        try:
+            # Initialize default values
+            answer = ""
+            comments = ""
+            
+            # Handle error messages that contain the actual response
+            if "Could not parse LLM output:" in response:
+                # Extract the content between backticks
+                import re
+                pattern = r"`([^`]*ANSWER:[^`]*COMMENTS:[^`]*)`"
+                match = re.search(pattern, response, re.DOTALL)
+                if match:
+                    response = match.group(1)
+                    print(f"🔧 Extracted response from error message")
+            
+            # Look for ANSWER: and COMMENTS: patterns
+            lines = response.split('\n')
+            current_section = None
+            comments_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                
+                if line.startswith('ANSWER:'):
+                    answer = line.replace('ANSWER:', '').strip()
+                    current_section = 'answer'
+                elif line.startswith('COMMENTS:'):
+                    comments = line.replace('COMMENTS:', '').strip()
+                    current_section = 'comments'
+                    if comments:  # If there's content on the same line
+                        comments_lines = []  # Reset to avoid duplicates
+                elif current_section == 'comments' and line and not line.startswith('For troubleshooting'):
+                    # Continue collecting comments if we're in the comments section
+                    # Skip troubleshooting messages
+                    comments_lines.append(line)
+            
+            # Join additional comment lines
+            if comments_lines:
+                full_comments = comments + ' ' + ' '.join(comments_lines) if comments else ' '.join(comments_lines)
+                comments = full_comments.strip()
+            
+            # Alternative parsing if direct method didn't work
+            if not answer or not comments:
+                # Try regex patterns
+                import re
+                answer_match = re.search(r'ANSWER:\s*(Yes|No)', response, re.IGNORECASE)
+                if answer_match:
+                    answer = answer_match.group(1).capitalize()
+                
+                comments_match = re.search(r'COMMENTS:\s*(.+?)(?=For troubleshooting|$)', response, re.DOTALL | re.IGNORECASE)
+                if comments_match:
+                    comments = comments_match.group(1).strip()
+            
+            # Validate and clean answer
+            if answer:
+                if answer.lower() in ['yes', 'y', 'oui', 'true', '1']:
+                    answer = 'Yes'
+                elif answer.lower() in ['no', 'n', 'non', 'false', '0']:
+                    answer = 'No'
+                elif 'yes' in answer.lower():
+                    answer = 'Yes'
+                elif 'no' in answer.lower():
+                    answer = 'No'
+            
+            # If still no answer, try to determine from comments content
+            if not answer and comments:
+                if any(word in comments.lower() for word in ['can', 'able', 'support', 'comply', 'provide', 'implement', 'yes', 'available']):
+                    answer = 'Yes'
+                else:
+                    answer = 'No'
+            
+            # Final fallback
+            if not answer:
+                answer = 'No'
+            
+            # Ensure comments exist and are clean
+            if not comments:
+                comments = "No detailed explanation was provided by the AI system."
+            else:
+                # Clean up troubleshooting messages
+                comments = re.sub(r'For troubleshooting.*$', '', comments, flags=re.DOTALL).strip()
+            
+            print(f"✅ Parsed - Answer: {answer}, Comments length: {len(comments)} chars")
+            return {
+                'answer': answer,
+                'comments': comments
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Failed to parse structured response: {e}")
+            # Try one more time with simple regex
+            try:
+                import re
+                answer_match = re.search(r'ANSWER:\s*(Yes|No)', response, re.IGNORECASE)
+                comments_match = re.search(r'COMMENTS:\s*(.+)', response, re.DOTALL | re.IGNORECASE)
+                
+                answer = answer_match.group(1).capitalize() if answer_match else 'No'
+                comments = comments_match.group(1).strip() if comments_match else f"Parsing error: {str(e)}"
+                
+                # Clean comments
+                comments = re.sub(r'For troubleshooting.*$', '', comments, flags=re.DOTALL).strip()
+                
+                return {
+                    'answer': answer,
+                    'comments': comments if comments else "Could not extract detailed explanation."
+                }
+            except:
+                return {
+                    'answer': 'No',
+                    'comments': f"Error parsing response. Raw content: {response[:200]}..."
+                }
+    
     def answer_rfp_question(self, question: str) -> Dict[str, Any]:
         """
-        Answer an RFP question using ReAct reasoning
+        Answer an RFP question using ReAct reasoning with Yes/No format
         
         Args:
             question: The RFP question to answer
             
         Returns:
-            Dict containing answer and metadata
+            Dict containing structured answer and metadata
         """
         try:
-            # Create a focused prompt for RFP context
+            # Create a focused prompt for RFP context with structured output
             prompt = f"""
 You are answering an RFP (Request for Proposal) question for a SaaS company.
 
@@ -312,9 +452,22 @@ Instructions:
    - search_internal_docs: For company policies and internal information
    - search_rfp_history: For consistency with previous RFP responses
    - search_web: For current industry standards or technical information
-3. Provide a clear, professional, and concise answer suitable for an RFP
+3. Based on your research, determine if our company can satisfy this requirement/question
 
-Be accurate and demonstrate your company's capabilities clearly.
+CRITICAL: You MUST end your response with this EXACT format:
+ANSWER: Yes
+COMMENTS: [Your detailed explanation here]
+
+OR
+
+ANSWER: No  
+COMMENTS: [Your detailed explanation here]
+
+Do not include any other text after the ANSWER and COMMENTS sections.
+
+Example:
+ANSWER: Yes
+COMMENTS: Our platform implements enterprise-grade encryption (AES-256) for data at rest and TLS 1.3 for data in transit. We maintain SOC 2 Type II compliance and undergo annual security audits. Our security framework includes multi-factor authentication, role-based access controls, and continuous monitoring systems.
 """
             
             print(f"🤖 Processing: {question[:50]}...")
@@ -322,18 +475,25 @@ Be accurate and demonstrate your company's capabilities clearly.
             # Run the ReAct agent
             response = self.agent.run(prompt)
             
+            # Parse structured response
+            parsed_response = self._parse_structured_response(response)
+            
             # Save successful Q&A pairs
-            if response and len(response) > 20 and not response.startswith("❌"):
+            if parsed_response['answer'] and len(parsed_response['comments']) > 20:
                 metadata = {
                     'method': f'react_{self.mode}',
                     'model': self.model,
-                    'mode': self.mode
+                    'mode': self.mode,
+                    'structured_answer': parsed_response['answer'],
+                    'structured_comments': parsed_response['comments']
                 }
-                self.save_qa_pair(question, response, metadata)
+                self.save_qa_pair(question, f"ANSWER: {parsed_response['answer']}\nCOMMENTS: {parsed_response['comments']}", metadata)
             
             return {
                 'question': question,
-                'answer': response,
+                'answer': parsed_response['answer'],  # Yes/No
+                'comments': parsed_response['comments'],  # Detailed explanation
+                'full_response': response,  # Original full response
                 'method': f'react_{self.mode}',
                 'model': self.model,
                 'mode': self.mode,
@@ -342,11 +502,36 @@ Be accurate and demonstrate your company's capabilities clearly.
             }
             
         except Exception as e:
-            error_msg = f"❌ Error processing question: {e}"
-            print(error_msg)
+            error_msg = str(e)
+            print(f"❌ Error processing question: {error_msg}")
+            
+            # Check if the error contains the actual LLM response with ANSWER/COMMENTS
+            if "Could not parse LLM output:" in error_msg and "`" in error_msg:
+                print(f"🔧 Attempting to extract answer from error message...")
+                # Try to parse from the error message
+                parsed_response = self._parse_structured_response(error_msg)
+                
+                if parsed_response['answer'] and parsed_response['comments'] and len(parsed_response['comments']) > 20:
+                    print(f"✅ Successfully extracted answer from error message")
+                    return {
+                        'question': question,
+                        'answer': parsed_response['answer'],  # Yes/No
+                        'comments': parsed_response['comments'],  # Detailed explanation
+                        'full_response': error_msg,  # Original error with response
+                        'method': f'react_{self.mode}_recovered',
+                        'model': self.model,
+                        'mode': self.mode,
+                        'timestamp': datetime.now().isoformat(),
+                        'sources_used': 'react_reasoning_recovered'
+                    }
+            
+            # Fallback if no valid response could be extracted
+            print(f"⚠️ Manual review required.")
             return {
                 'question': question,
-                'answer': error_msg,
+                'answer': 'No',  # Default to No for errors
+                'comments': f"Error processing this question: {str(e)[:150]}. Manual review required.",
+                'full_response': error_msg,
                 'method': f'react_{self.mode}_error',
                 'model': self.model,
                 'mode': self.mode,
@@ -465,10 +650,12 @@ def test_react_retriever(mode="dev"):
     print(f"Testing single question in {mode} mode:")
     result = retriever.answer_rfp_question(test_questions[0])
     print(f"Question: {result['question']}")
-    print(f"Answer: {result['answer'][:300]}...")
+    print(f"Answer: {result['answer']}")  # Yes/No
+    print(f"Comments: {result['comments'][:200]}...")  # Explanation
     print(f"Method: {result['method']}")
     print(f"Model: {result['model']}")
     print(f"Mode: {result['mode']}")
+    print(f"Full Response Length: {len(result.get('full_response', ''))} chars")
     
     # Test batch processing (limit for testing)
     print("\n" + "="*60)

@@ -36,7 +36,7 @@ class InternalParser:
         # Auto-select model based on mode
         if model is None:
             if self.mode == "prod":
-                self.model = "gpt-4o-mini"  # Fast and cost-effective for production
+                self.model = "qwen2.5:0.5b"  # Fast and cost-effective for production
             elif self.mode == "hybrid":
                 self.model = "qwen2.5:0.5b"  # Default Qwen model for hybrid mode (ultra-light and fast)
             else:

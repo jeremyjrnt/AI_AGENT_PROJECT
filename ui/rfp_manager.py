@@ -266,12 +266,11 @@ def show_pdf_viewer(pdf_file_path):
         </iframe>
         """
         
-        st.markdown("### PDF Preview", help="Scroll through the document to review its content before parsing")
         st.markdown(pdf_display, unsafe_allow_html=True)
         
         # Add file info
         file_size = len(pdf_bytes) / (1024 * 1024)  # Convert to MB
-        st.info(f"📄 **File**: {Path(pdf_file_path).name} | **Size**: {file_size:.2f} MB")
+        st.info(f"**File**: {Path(pdf_file_path).name} | **Size**: {file_size:.2f} MB")
         
         return True
     except Exception as e:
@@ -323,29 +322,30 @@ def pre_complete_rfp(current_df, mode="dev"):
             status_text.text(f"ReAct {mode.upper()} processing question {idx + 1}/{total_questions}: {question[:50]}...")
             
             try:
-                # Use ReAct to answer the question
+                # Use ReAct to answer the question with structured Yes/No format
                 result = react_retriever.answer_rfp_question(question)
                 
-                # Extract the answer
-                ai_answer = result.get('answer', 'No answer generated')
+                # Extract structured answer and comments
+                binary_answer = result.get('answer', 'No')  # Yes/No
+                detailed_comments = result.get('comments', 'No detailed explanation provided')
                 
-                # Update the Comments column with the AI answer (include mode info)
-                mode_info = f"ReAct AI ({mode.upper()}, {result.get('model', 'unknown')}): {ai_answer}"
-                if row['Comments']:
-                    completed_df.at[idx, 'Comments'] = f"{row['Comments']} | {mode_info}"
+                # Fill the Answer column with Yes/No
+                completed_df.at[idx, 'Answer'] = binary_answer
+                
+                # Fill the Comments column with detailed explanation
+                mode_info = f"ReAct AI ({mode.upper()}, {result.get('model', 'unknown')})"
+                if row['Comments'] and row['Comments'].strip():
+                    # Preserve existing comments and add AI explanation
+                    completed_df.at[idx, 'Comments'] = f"{row['Comments'].strip()} | {mode_info}: {detailed_comments}"
                 else:
-                    completed_df.at[idx, 'Comments'] = mode_info
-                
-                # If the answer looks like a Yes/No response, also fill the Answer column
-                answer_lower = ai_answer.lower()
-                if any(word in answer_lower for word in ['yes', 'oui', 'available', 'supported', 'compliant', 'we have', 'we do', 'we provide']):
-                    if not any(neg in answer_lower for neg in ['no', 'not', 'unavailable', 'unsupported', 'we do not', 'we don\'t']):
-                        completed_df.at[idx, 'Answer'] = 'Yes'
-                elif any(word in answer_lower for word in ['no', 'non', 'unavailable', 'not supported', 'not compliant', 'we do not', 'we don\'t']):
-                    completed_df.at[idx, 'Answer'] = 'No'
+                    # Use only AI explanation
+                    completed_df.at[idx, 'Comments'] = f"{mode_info}: {detailed_comments}"
                 
             except Exception as e:
                 st.warning(f"Could not process question {idx + 1} with ReAct: {e}")
+                # Set default values for errors
+                completed_df.at[idx, 'Answer'] = 'No'
+                completed_df.at[idx, 'Comments'] = f"Error: Could not process with ReAct AI - {str(e)}"
                 continue
         
         progress_bar.progress(1.0)
@@ -461,7 +461,7 @@ def show_how_to_use():
     - **Comments Integration**: AI answers are placed in the Comments column for review
     - **Smart Yes/No Detection**: Automatically fills Answer column when appropriate
     
-    ### ✏️ Step 3: Edit & Review
+    ### Step 3: Edit & Review
     - **Interactive Table**: Modify answers and comments directly in the interface
     - **Dropdown Answers**: Use dropdown for Yes/No answers
     - **Custom Comments**: Add detailed explanations and context
@@ -513,7 +513,7 @@ def show_how_to_use():
     st.markdown("---")
     
     # Technical details
-    with st.expander("🔧 Technical Details", expanded=False):
+    with st.expander(" Technical Details", expanded=False):
         st.markdown("""
         ### System Architecture
         - **Frontend**: Streamlit web interface
@@ -535,7 +535,7 @@ def show_how_to_use():
         """)
     
     # Tips and best practices
-    with st.expander("💡 Tips & Best Practices", expanded=False):
+    with st.expander("Tips & Best Practices", expanded=False):
         st.markdown("""
         ### For Best Results:
         1. **Upload Quality PDFs**: Clear, text-based PDFs work best
@@ -592,7 +592,7 @@ def show_rfp_manager():
     st.sidebar.markdown("---")
     
     # Internal documents upload section
-    st.sidebar.header("📚 Knowledge Base Management")
+    st.sidebar.header("Knowledge Base Management")
     
     # Source name input
     source_name = st.sidebar.text_input(
@@ -684,32 +684,6 @@ def show_rfp_manager():
     
     st.sidebar.markdown("---")
     
-    # AI Mode Selection
-    st.sidebar.header("AI Processing Mode")
-    
-    # Check if OpenAI key is available for production mode
-    openai_available = bool(settings.OPENAI_API_KEY)
-    
-    if openai_available:
-        ai_mode = st.sidebar.selectbox(
-            "Select AI Mode",
-            options=["dev", "prod"],
-            format_func=lambda x: {
-                "dev": "Development (Free Ollama)",
-                "prod": "Production (OpenAI)"
-            }[x],
-            help="Dev mode uses free local Ollama models. Prod mode uses OpenAI for better quality.",
-            key="ai_mode_selector"
-        )
-    else:
-        ai_mode = "dev"
-        st.sidebar.info("Development Mode Only\n\nSet OPENAI_API_KEY in .env to enable production mode with OpenAI.")
-    
-    # Store AI mode in session state
-    st.session_state.ai_mode = ai_mode
-    
-    st.sidebar.markdown("---")
-    
     # RFP Statistics Section
     if get_rfp_tracker is not None:
         st.sidebar.header("RFP Statistics")
@@ -754,13 +728,12 @@ def show_rfp_manager():
     
     if not rfp_files:
         st.sidebar.warning("No RFP files found in data/new_RFPs/")
-        st.sidebar.info("👆 Upload PDF files using the drag & drop area above")
+        st.sidebar.info("Upload PDF files using the drag & drop area above")
     else:
         # No files available message will be shown in main body
         pass
     
     # Main content area - RFP Selection and Processing
-    st.header("RFP Processing Workflow")
     
     # Step 1: RFP File Selection
     if not rfp_files:
@@ -768,50 +741,38 @@ def show_rfp_manager():
         st.info("Use the **Upload New RFPs** section in the sidebar to add PDF files.")
     else:
         # RFP File Selection in main body
-        st.subheader("Step 1: Select RFP File")
+        st.subheader("Select RFP File")
         selected_file = st.selectbox(
             "Choose an RFP PDF file to process:",
             options=rfp_files,
-            help="Select a PDF file from the uploaded RFPs to preview and parse",
+            help="Select a PDF file from the uploaded RFPs.",
             key="main_rfp_selector"
         )
         
-        # Step 2: PDF Preview
+        # Step 2: PDF Preview (Auto-display when file selected)
         if selected_file:
             st.markdown("---")
-            st.subheader("Step 2: Preview PDF Document")
+            st.subheader("PDF Preview")
             
-            # Create columns for preview and parse button
-            col1, col2 = st.columns([4, 1])
+            rfp_path = project_root / "data" / "new_RFPs" / selected_file
             
-            with col1:
-                rfp_path = project_root / "data" / "new_RFPs" / selected_file
-                
-                # Show/hide PDF viewer toggle
-                if 'show_pdf' not in st.session_state:
-                    st.session_state.show_pdf = False
-                
-                if st.button("📖 Show PDF Preview", use_container_width=True):
-                    st.session_state.show_pdf = not st.session_state.show_pdf
-                
-                # Display PDF if toggled on
-                if st.session_state.show_pdf:
-                    with st.spinner("Loading PDF preview..."):
-                        show_pdf_viewer(str(rfp_path))
+            # Automatically show PDF preview
+            with st.spinner("Loading PDF preview..."):
+                show_pdf_viewer(str(rfp_path))
             
+            st.markdown("---")
+            st.subheader("Extract Questions")
+            
+            # Parse button centered
+            col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                st.subheader("Step 3: Parse")
-                st.write("")  # Add some spacing
-                
-                # Parse button
-                if st.button("🚀 Parse RFP", type="primary", use_container_width=True):
+                if st.button("Extract questions from RFP", type="primary", use_container_width=True):
                     with st.spinner("Parsing RFP file..."):
                         df = parse_selected_rfp(selected_file)
                         
                         if df is not None:
                             st.session_state.rfp_data = df
                             st.session_state.current_file = selected_file
-                            st.session_state.show_pdf = False  # Hide PDF after parsing
                             st.success(f"Successfully parsed {len(df)} questions from {selected_file}")
                             st.rerun()  # Refresh to show editing interface
                         else:
@@ -821,7 +782,7 @@ def show_rfp_manager():
     
     # Step 4: Editing Interface (only shown after parsing)
     if 'rfp_data' in st.session_state:
-        st.header(f"Step 4: Edit Questions & Answers")
+        st.header(f"Edit Questions & Answers")
         st.subheader(f"Current File: {st.session_state.current_file}")
         
         # Display editable table
@@ -862,35 +823,136 @@ def show_rfp_manager():
         # Update session state with edited data
         st.session_state.rfp_data = edited_df
         
-        # Action buttons
+        # Simplified Action buttons
         st.markdown("### Actions")
         
-        # First row of buttons
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        # Three main action buttons
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Get current AI mode
-            current_mode = getattr(st.session_state, 'ai_mode', 'dev')
-            mode_label = "Development" if current_mode == "dev" else "Production"
-            
-            if st.button(f"Pre-complete ({mode_label})", type="primary", help=f"Auto-fill answers using ReAct AI in {current_mode.upper()} mode (Internal Docs + RFP History + Web Search)"):
-                with st.spinner(f"Pre-completing RFP using ReAct AI in {current_mode.upper()} mode..."):
-                    completed_df = pre_complete_rfp(edited_df, current_mode)
-                    st.session_state.rfp_data = completed_df
-                    st.rerun()
-        
-        with col4:
-            if st.button("🔄", help="Reset ReAct retriever cache"):
-                # Clear both dev and prod caches
-                if 'react_retriever_dev' in st.session_state:
-                    del st.session_state.react_retriever_dev
-                if 'react_retriever_prod' in st.session_state:
-                    del st.session_state.react_retriever_prod
-                st.success("ReAct cache cleared!")
-                st.rerun()
+            if st.button("Pre-complete", type="primary", use_container_width=True, help="Auto-fill answers using AI with live progress"):
+                if ReactRFPRetriever is None or get_qdrant_client is None:
+                    st.error("ReAct retriever components not available")
+                else:
+                    # Check if OpenAI key is available
+                    if not settings.OPENAI_API_KEY:
+                        st.error("OpenAI API key required. Please set OPENAI_API_KEY in .env file.")
+                    else:
+                        # Process all questions with AI with live updates (production mode only)
+                        with st.spinner(f"Processing {len(edited_df)} questions with AI..."):
+                            try:
+                                # Initialize ReAct retriever in production mode
+                                setup_collections_dynamic()
+                                client = get_qdrant_client()
+                                react_retriever = ReactRFPRetriever(client=client, mode="prod")
+                                
+                                # Create container for live updates
+                                progress_container = st.container()
+                                table_container = st.container()
+                                
+                                with progress_container:
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                
+                                # Process each question with live table updates
+                                processed_df = edited_df.copy()
+                                
+                                for idx, row in processed_df.iterrows():
+                                    question = row['Questions']
+                                    if not question or len(str(question).strip()) < 10:
+                                        continue
+                                    
+                                    # Update progress
+                                    progress = (idx + 1) / len(processed_df)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Processing question {idx + 1}/{len(processed_df)}: {str(question)[:60]}...")
+                                    
+                                    try:
+                                        # Use ReAct to answer the question with structured Yes/No format
+                                        result = react_retriever.answer_rfp_question(str(question))
+                                        
+                                        # Extract structured answer and comments
+                                        binary_answer = result.get('answer', 'No')  # Yes/No
+                                        detailed_comments = result.get('comments', 'No detailed explanation provided')
+                                        
+                                        # Fill the Answer column with Yes/No
+                                        processed_df.at[idx, 'Answer'] = binary_answer
+                                        
+                                        # Fill the Comments column with detailed explanation
+                                        if row['Comments'] and str(row['Comments']).strip() and str(row['Comments']).strip() != 'nan':
+                                            # Preserve existing comments and add AI explanation
+                                            processed_df.at[idx, 'Comments'] = f"{str(row['Comments']).strip()} | AI: {detailed_comments}"
+                                        else:
+                                            # Use only AI explanation
+                                            processed_df.at[idx, 'Comments'] = f"AI: {detailed_comments}"
+                                        
+                                        # Show live update of the table with current progress
+                                        with table_container:
+                                            st.subheader(f"📝 Live Progress - Question {idx + 1}/{len(processed_df)} completed")
+                                            # Show only processed rows so far for performance
+                                            display_df = processed_df.iloc[:idx + 1].copy()
+                                            # Add status indicator
+                                            for i in range(len(display_df)):
+                                                if i <= idx:
+                                                    # Show completed rows with check mark
+                                                    if display_df.iloc[i]['Answer']:
+                                                        display_df.iloc[i, 0] = f"{display_df.iloc[i, 0]}"
+                                            
+                                            st.dataframe(
+                                                display_df[['Questions', 'Answer', 'Comments']],
+                                                use_container_width=True,
+                                                hide_index=True
+                                            )
+                                        
+                                        # Small delay to make updates visible
+                                        import time
+                                        time.sleep(0.5)
+                                        
+                                    except Exception as e:
+                                        st.warning(f"Could not process question {idx + 1} with AI: {e}")
+                                        # Set default values for errors
+                                        processed_df.at[idx, 'Answer'] = 'No'
+                                        processed_df.at[idx, 'Comments'] = f"Error: Could not process with AI - {str(e)[:100]}"
+                                        
+                                        # Still show the update even for errors
+                                        with table_container:
+                                            st.subheader(f"⚠️ Question {idx + 1}/{len(processed_df)} - Processing Error")
+                                            display_df = processed_df.iloc[:idx + 1].copy()
+                                            st.dataframe(
+                                                display_df[['Questions', 'Answer', 'Comments']],
+                                                use_container_width=True,
+                                                hide_index=True
+                                            )
+                                        
+                                        time.sleep(0.5)
+                                        continue
+                                
+                                progress_bar.progress(1.0)
+                                status_text.text(f"AI processing complete! All {len(processed_df)} questions processed.")
+                                
+                                # Final table display
+                                with table_container:
+                                    st.subheader("Final Results - All Questions Completed")
+                                    st.dataframe(
+                                        processed_df[['Questions', 'Answer', 'Comments']],
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+                                
+                                # Update the session state with processed data
+                                st.session_state.rfp_data = processed_df
+                                st.success(f"Successfully processed {len(processed_df)} questions with AI!")
+                                
+                                # Auto-refresh after 2 seconds to show in main editor
+                                import time
+                                time.sleep(2)
+                                st.rerun()  # Refresh to show updated data
+                                
+                            except Exception as e:
+                                st.error(f"AI processing failed: {e}")
         
         with col2:
-            if st.button("Save to Excel", type="secondary"):
+            if st.button("Save Excel", type="secondary", use_container_width=True):
                 # Save to outputs folder
                 outputs_folder = project_root / "outputs"
                 outputs_folder.mkdir(exist_ok=True)
@@ -902,34 +964,34 @@ def show_rfp_manager():
                 st.success(f"Saved to: {filepath}")
         
         with col3:
-            # Submitter name input
-            submitter_name = st.text_input(
-                "👤 Submitter Name",
-                placeholder="Enter your name",
-                help="Name of the person submitting this RFP",
-                key="submitter_name_input"
+            # Submit button with validator name
+            validator_name = st.text_input(
+                "Validator Name",
+                placeholder="Enter validator name",
+                help="Name of the person validating this RFP",
+                key="validator_name_input"
             )
             
-            if st.button("Submit & Index", type="primary", help="Complete RFP: Save, Index in Vector DB, and Archive"):
-                if not submitter_name or not submitter_name.strip():
-                    st.error("Please enter the submitter name before submitting")
+            if st.button("Submit", type="primary", use_container_width=True, help="Complete RFP: Save, Index in Vector DB, and Archive"):
+                if not validator_name or not validator_name.strip():
+                    st.error("Please enter the validator name before submitting")
                 else:
                     with st.spinner("Submitting RFP and indexing in vector database..."):
                         success, result, excel_file, indexed_count = submit_completed_rfp(
                             st.session_state.current_file, 
                             edited_df, 
-                            submitter_name.strip()
+                            validator_name.strip()
                         )
                         if success:
                             st.success(f"""
                             **RFP Successfully Submitted!**
                             
-                            👤 **Submitted by**: {submitter_name.strip()}
-                            📁**Archived as**: {result}
+                            👤 **Validated by**: {validator_name.strip()}
+                            📁 **Archived as**: {result}
                             💾 **Excel saved**: {excel_file}
                             🔗 **Vector DB indexed**: {indexed_count} Q&A pairs
                             
-                            The RFP knowledge is now available for future AI pre-completion!
+                            The RFP knowledge is now available for future AI processing!
                             """)
                             # Clear session state and refresh
                             if 'rfp_data' in st.session_state:
@@ -940,21 +1002,23 @@ def show_rfp_manager():
                         else:
                             st.error(f"Failed to submit RFP: {result}")
         
-        # Second row of buttons
+        # Optional secondary actions
         st.markdown("---")
         col4, col5, col6 = st.columns(3)
         
         with col4:
-            if st.button("Reset"):
-                # Re-parse the original file
-                with st.spinner("Resetting..."):
-                    df = parse_selected_rfp(st.session_state.current_file)
-                    if df is not None:
-                        st.session_state.rfp_data = df
-                        st.rerun()
+            if st.button("Reset", help="Clear Answer and Comments columns"):
+                # Clear Answer and Comments columns only
+                with st.spinner("Clearing Answer and Comments..."):
+                    reset_df = edited_df.copy()
+                    reset_df['Answer'] = ''
+                    reset_df['Comments'] = ''
+                    st.session_state.rfp_data = reset_df
+                    st.success("Answer and Comments columns cleared!")
+                    st.rerun()
         
         with col5:
-            if st.button("Statistics"):
+            if st.button("Statistics", help="Show progress statistics"):
                 total_questions = len(edited_df)
                 answered_yes = len(edited_df[edited_df['Answer'] == 'Yes'])
                 answered_no = len(edited_df[edited_df['Answer'] == 'No'])
@@ -970,13 +1034,11 @@ def show_rfp_manager():
                 """)
         
         with col6:
-            # Placeholder for future features
+            # Empty column (removed Clear Cache button)
             pass
-        # Welcome message
-        st.info("Select a RFP file from the sidebar to get started")
-        
-        # Welcome message
-        st.info("Select a RFP file from the main interface to get started")
+        # Welcome message when no RFP is loaded
+    if 'rfp_data' not in st.session_state:
+        st.info("Select an RFP file from above to get started")
 
 
 if __name__ == "__main__":
