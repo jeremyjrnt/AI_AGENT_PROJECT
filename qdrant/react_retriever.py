@@ -16,7 +16,8 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 # LangChain imports for ReAct
-from langchain.agents import initialize_agent, Tool, AgentType
+from langchain.agents import initialize_agent, Tool
+from langchain.agents.agent_types import AgentType
 from langchain_community.tools import DuckDuckGoSearchRun
 
 # Project imports
@@ -64,22 +65,21 @@ class ReactRFPRetriever:
         self._setup_agent()
     
     def _initialize_llm(self):
-        """Initialize LLM based on development or production mode"""
+        """Initialize LLM - Azure OpenAI only for production mode"""
         if self.mode == "prod":
             # Production mode: Use Azure OpenAI
             try:
                 from langchain_openai import AzureChatOpenAI
                 
                 if not settings.AZURE_OPENAI_API_KEY:
-                    raise ValueError("Azure OpenAI API key not found. Set AZURE_OPENAI_API_KEY in .env file for production mode.")
+                    raise ValueError("Azure OpenAI API key not found. Set AZURE_OPENAI_API_KEY in .env file.")
                 
                 self.llm = AzureChatOpenAI(
-                    azure_deployment=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
-                    api_version=settings.AZURE_OPENAI_API_VERSION,
-                    azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
                     api_key=settings.AZURE_OPENAI_API_KEY,
-                    temperature=0.1,
-                    model_name=settings.AZURE_OPENAI_CHAT_DEPLOYMENT
+                    azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                    deployment_name=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
+                    api_version=settings.AZURE_OPENAI_API_VERSION,
+                    temperature=0.1
                 )
                 print(f"🚀 Production Mode: Using Azure OpenAI model {settings.AZURE_OPENAI_CHAT_DEPLOYMENT}")
                 
@@ -237,25 +237,40 @@ class ReactRFPRetriever:
                 if not results:
                     return "🔍 No similar RFP questions found in history"
                 
-                # Format results
+                # Format results using direct answer and comments from metadata
                 rfps = []
                 for result in results:
                     question = result.payload.get('question', '')[:100]
-                    answer = result.payload.get('answer', '')[:150]
                     score = f"({result.score:.2f})"
-                    rfps.append(f"🔍 RFP {score}:\nQ: {question}...\nA: {answer}...")
+                    
+                    # Extract answer and comments directly from metadata
+                    answer = result.payload.get('answer', '')
+                    comments = result.payload.get('comments', '')
+                    
+                    # If direct fields not available, try structured fields
+                    if not answer:
+                        answer = result.payload.get('structured_answer', 'No answer available')
+                    if not comments:
+                        comments = result.payload.get('structured_comments', 'No comments available')
+                    
+                    # Limit lengths for display
+                    answer_display = answer[:100] if answer else 'No answer'
+                    comments_display = comments[:200] if comments else 'No comments'
+                    
+                    # Format the result with answer and comments from the k nearest neighbors
+                    rfps.append(f"🔍 RFP {score}:\nQ: {question}...\nAnswer: {answer_display}...\nComments: {comments_display}...")
                 
-                return f"✅ Found {len(rfps)} similar RFP pairs:\n" + "\n".join(rfps)
+                return f"✅ Found {len(rfps)} similar RFP pairs from k-NN search:\n" + "\n".join(rfps)
             
             except Exception as e:
                 return f"❌ Error searching RFP history: {e}"
         
-        # Tool 3: Web Search
+        # Tool 3: Web Search with DuckDuckGo
         def search_web(query: str) -> str:
-            """Search the web for current information"""
+            """Search the web for current information using DuckDuckGo"""
             try:
                 search = DuckDuckGoSearchRun()
-                enhanced_query = f"{query} SaaS technology enterprise"
+                enhanced_query = f"{query} SaaS technology enterprise standards best practices"
                 results = search.run(enhanced_query)
                 
                 if not results or len(results) < 20:
@@ -268,7 +283,9 @@ class ReactRFPRetriever:
                 return f"✅ Web search results: {results}"
             
             except Exception as e:
-                return f"❌ Error in web search: {e}"
+                # Simply handle the exception and return empty result
+                print(f"⚠️ Web search failed: {e}")
+                return "🌐 Web search temporarily unavailable"
         
         # Define tools for the agent
         self.tools = [
@@ -290,7 +307,7 @@ class ReactRFPRetriever:
         ]
     
     def _setup_agent(self):
-        """Setup the ReAct agent with Ollama"""
+        """Setup the ReAct agent with classic LangChain structure"""
         try:
             self.agent = initialize_agent(
                 tools=self.tools,
@@ -301,403 +318,411 @@ class ReactRFPRetriever:
                 early_stopping_method="generate",
                 handle_parsing_errors=True
             )
-            print("🎯 ReAct agent configured successfully")
+            print("🎯 ReAct agent configured successfully with classic structure")
         except Exception as e:
             print(f"❌ Failed to setup ReAct agent: {e}")
             raise
     
-    def _parse_structured_response(self, response: str) -> Dict[str, str]:
-        """
-        Parse structured response to extract Answer (Yes/No) and Comments
-        Even handles responses with errors or incomplete parsing
-        
-        Args:
-            response: Raw response from the LLM
-            
-        Returns:
-            Dict with 'answer' and 'comments' keys
-        """
-        try:
-            # Initialize default values
-            answer = ""
-            comments = ""
-            
-            # Handle error messages that contain the actual response
-            if "Could not parse LLM output:" in response:
-                # Extract the content between backticks
-                import re
-                pattern = r"`([^`]*ANSWER:[^`]*COMMENTS:[^`]*)`"
-                match = re.search(pattern, response, re.DOTALL)
-                if match:
-                    response = match.group(1)
-                    print(f"🔧 Extracted response from error message")
-            
-            # Look for ANSWER: and COMMENTS: patterns
-            lines = response.split('\n')
-            current_section = None
-            comments_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                
-                if line.startswith('ANSWER:'):
-                    answer = line.replace('ANSWER:', '').strip()
-                    current_section = 'answer'
-                elif line.startswith('COMMENTS:'):
-                    comments = line.replace('COMMENTS:', '').strip()
-                    current_section = 'comments'
-                    if comments:  # If there's content on the same line
-                        comments_lines = []  # Reset to avoid duplicates
-                elif current_section == 'comments' and line and not line.startswith('For troubleshooting'):
-                    # Continue collecting comments if we're in the comments section
-                    # Skip troubleshooting messages
-                    comments_lines.append(line)
-            
-            # Join additional comment lines
-            if comments_lines:
-                full_comments = comments + ' ' + ' '.join(comments_lines) if comments else ' '.join(comments_lines)
-                comments = full_comments.strip()
-            
-            # Alternative parsing if direct method didn't work
-            if not answer or not comments:
-                # Try regex patterns
-                import re
-                answer_match = re.search(r'ANSWER:\s*(Yes|No)', response, re.IGNORECASE)
-                if answer_match:
-                    answer = answer_match.group(1).capitalize()
-                
-                comments_match = re.search(r'COMMENTS:\s*(.+?)(?=For troubleshooting|$)', response, re.DOTALL | re.IGNORECASE)
-                if comments_match:
-                    comments = comments_match.group(1).strip()
-            
-            # Validate and clean answer
-            if answer:
-                if answer.lower() in ['yes', 'y', 'oui', 'true', '1']:
-                    answer = 'Yes'
-                elif answer.lower() in ['no', 'n', 'non', 'false', '0']:
-                    answer = 'No'
-                elif 'yes' in answer.lower():
-                    answer = 'Yes'
-                elif 'no' in answer.lower():
-                    answer = 'No'
-            
-            # If still no answer, try to determine from comments content
-            if not answer and comments:
-                if any(word in comments.lower() for word in ['can', 'able', 'support', 'comply', 'provide', 'implement', 'yes', 'available']):
-                    answer = 'Yes'
-                else:
-                    answer = 'No'
-            
-            # Final fallback
-            if not answer:
-                answer = 'No'
-            
-            # Ensure comments exist and are clean
-            if not comments:
-                comments = "No detailed explanation was provided by the AI system."
-            else:
-                # Clean up troubleshooting messages
-                comments = re.sub(r'For troubleshooting.*$', '', comments, flags=re.DOTALL).strip()
-            
-            print(f"✅ Parsed - Answer: {answer}, Comments length: {len(comments)} chars")
-            return {
-                'answer': answer,
-                'comments': comments
-            }
-            
-        except Exception as e:
-            print(f"⚠️ Failed to parse structured response: {e}")
-            # Try one more time with simple regex
-            try:
-                import re
-                answer_match = re.search(r'ANSWER:\s*(Yes|No)', response, re.IGNORECASE)
-                comments_match = re.search(r'COMMENTS:\s*(.+)', response, re.DOTALL | re.IGNORECASE)
-                
-                answer = answer_match.group(1).capitalize() if answer_match else 'No'
-                comments = comments_match.group(1).strip() if comments_match else f"Parsing error: {str(e)}"
-                
-                # Clean comments
-                comments = re.sub(r'For troubleshooting.*$', '', comments, flags=re.DOTALL).strip()
-                
-                return {
-                    'answer': answer,
-                    'comments': comments if comments else "Could not extract detailed explanation."
-                }
-            except:
-                return {
-                    'answer': 'No',
-                    'comments': f"Error parsing response. Raw content: {response[:200]}..."
-                }
-    
     def answer_rfp_question(self, question: str) -> Dict[str, Any]:
         """
-        Answer an RFP question using ReAct reasoning with Yes/No format
+        Process an RFP question through ReAct agent then refine with Azure OpenAI
         
         Args:
-            question: The RFP question to answer
+            question: The RFP question to process
             
         Returns:
-            Dict containing structured answer and metadata
+            dict: Structured response with answer, comments, method, mode, and question_vector
         """
+        print(f"🤖 Processing: {question[:50]}...")
+        
+        # Embed the question and keep the vector
+        question_vector = self._embed_query(question)
+        
         try:
-            # Create a focused prompt for RFP context with structured output
-            prompt = f"""
-You are answering an RFP (Request for Proposal) question for a SaaS company.
-
-Question: {question}
-
-Instructions:
-1. Think about what information you need to answer this question properly
-2. Use the available tools to gather relevant information:
-   - search_internal_docs: For company policies and internal information
-   - search_rfp_history: For consistency with previous RFP responses
-   - search_web: For current industry standards or technical information
-3. Based on your research, determine if our company can satisfy this requirement/question
-
-CRITICAL: You MUST end your response with this EXACT format:
-ANSWER: Yes
-COMMENTS: [Your detailed explanation here]
-
-OR
-
-ANSWER: No  
-COMMENTS: [Your detailed explanation here]
-
-Do not include any other text after the ANSWER and COMMENTS sections.
-
-Example:
-ANSWER: Yes
-COMMENTS: Our platform implements enterprise-grade encryption (AES-256) for data at rest and TLS 1.3 for data in transit. We maintain SOC 2 Type II compliance and undergo annual security audits. Our security framework includes multi-factor authentication, role-based access controls, and continuous monitoring systems.
-"""
+            # Step 1: Get raw response from ReAct agent
+            print("🔄 Step 1: Running ReAct agent...")
+            agent_response = self.agent.run(question)
+            print(f"✅ ReAct agent completed")
             
-            print(f"🤖 Processing: {question[:50]}...")
-            
-            # Run the ReAct agent
-            response = self.agent.run(prompt)
-            
-            # Parse structured response
-            parsed_response = self._parse_structured_response(response)
-            
-            # Save successful Q&A pairs
-            if parsed_response['answer'] and len(parsed_response['comments']) > 20:
-                metadata = {
-                    'method': f'react_{self.mode}',
-                    'model': self.model,
-                    'mode': self.mode,
-                    'structured_answer': parsed_response['answer'],
-                    'structured_comments': parsed_response['comments']
-                }
-                self.save_qa_pair(question, f"ANSWER: {parsed_response['answer']}\nCOMMENTS: {parsed_response['comments']}", metadata)
+            # Step 2: Post-process with Azure OpenAI for structured output
+            print("🔄 Step 2: Structuring response with Azure OpenAI...")
+            structured_response = self._structure_response_with_llm(question, agent_response)
             
             return {
-                'question': question,
-                'answer': parsed_response['answer'],  # Yes/No
-                'comments': parsed_response['comments'],  # Detailed explanation
-                'full_response': response,  # Original full response
-                'method': f'react_{self.mode}',
-                'model': self.model,
-                'mode': self.mode,
-                'timestamp': datetime.now().isoformat(),
-                'sources_used': 'react_reasoning'
+                "answer": structured_response.get("answer", "Unknown"),
+                "comments": structured_response.get("comments", ""),
+                "method": "react_with_llm_structuring",
+                "mode": self.mode,
+                "raw_agent_response": agent_response[:500] + "..." if len(agent_response) > 500 else agent_response,
+                "question_vector": question_vector,
+                "question": question
             }
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Error processing question: {error_msg}")
+            print(f"❌ Error processing question: {e}")
+            # Standard error response as requested
+            return {
+                "answer": "No",
+                "comments": "Please review this section",
+                "method": "error_fallback",
+                "mode": self.mode,
+                "raw_agent_response": "",
+                "question_vector": question_vector,
+                "question": question
+            }
+    
+    def _structure_response_with_llm(self, original_question: str, agent_response: str) -> Dict[str, str]:
+        """
+        Use Azure OpenAI to structure the ReAct agent response into Answer/Comments format
+        
+        Args:
+            original_question: The original RFP question
+            agent_response: Raw response from ReAct agent
             
-            # Check if the error contains the actual LLM response with ANSWER/COMMENTS
-            if "Could not parse LLM output:" in error_msg and "`" in error_msg:
-                print(f"🔧 Attempting to extract answer from error message...")
-                # Try to parse from the error message
-                parsed_response = self._parse_structured_response(error_msg)
+        Returns:
+            dict: Structured response with 'answer' and 'comments' keys
+        """
+        
+        # Create structured prompt for Azure OpenAI
+        structuring_prompt = f"""You are an expert Okta employee at analyzing RFP (Request for Proposal) responses and providing structured answers.
+
+ORIGINAL QUESTION:
+{original_question}
+
+RAW RESEARCH RESPONSE:
+{agent_response}
+
+Your task is to analyze the research response above and provide a structured answer for the RFP question.
+
+REQUIREMENTS:
+1. Answer: Must be either "Yes" or "No"
+2. Comments: Provide concise but detailed justification, context, and supporting information
+
+FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS:
+Answer: [Yes/No]
+Comments: [Detailed but concise explanation supporting your answer, including relevant technical details, standards supported, implementation considerations, and any limitations or requirements]
+
+Focus on being accurate, professional, and providing sufficient detail for RFP evaluators to understand the capability and implementation. If the response is incomplete or unclear, just say 'Please review this section.' in 'Comments'."""
+
+        try:
+            if self.mode == "prod":
+                # Use Azure OpenAI for structuring
+                from langchain.schema import HumanMessage
                 
-                if parsed_response['answer'] and parsed_response['comments'] and len(parsed_response['comments']) > 20:
-                    print(f"✅ Successfully extracted answer from error message")
-                    return {
-                        'question': question,
-                        'answer': parsed_response['answer'],  # Yes/No
-                        'comments': parsed_response['comments'],  # Detailed explanation
-                        'full_response': error_msg,  # Original error with response
-                        'method': f'react_{self.mode}_recovered',
-                        'model': self.model,
-                        'mode': self.mode,
-                        'timestamp': datetime.now().isoformat(),
-                        'sources_used': 'react_reasoning_recovered'
-                    }
-            
-            # Fallback if no valid response could be extracted
-            print(f"⚠️ Manual review required.")
-            return {
-                'question': question,
-                'answer': 'No',  # Default to No for errors
-                'comments': f"Error processing this question: {str(e)[:150]}. Manual review required.",
-                'full_response': error_msg,
-                'method': f'react_{self.mode}_error',
-                'model': self.model,
-                'mode': self.mode,
-                'timestamp': datetime.now().isoformat()
-            }
-    
-    def batch_answer_questions(self, questions: List[str]) -> List[Dict[str, Any]]:
-        """
-        Answer multiple RFP questions using ReAct
-        
-        Args:
-            questions: List of RFP questions
-            
-        Returns:
-            List of answer dictionaries
-        """
-        results = []
-        
-        print(f"🎯 Starting ReAct batch processing for {len(questions)} questions")
-        
-        for i, question in enumerate(questions, 1):
-            print(f"\n📝 Question {i}/{len(questions)}")
-            
-            if not question or len(question.strip()) < 10:
-                print("⏭️  Skipping short/empty question")
-                continue
-            
-            result = self.answer_rfp_question(question)
-            results.append(result)
-            
-            print(f"✅ Question {i} processed")
-        
-        print(f"\n🎉 ReAct batch processing complete: {len(results)} answers generated")
-        return results
-    
-    def save_qa_pair(self, question: str, answer: str, metadata: Dict[str, Any] = None) -> bool:
-        """
-        Save Q&A pair to RFP collection
-        
-        Args:
-            question: The RFP question
-            answer: Generated answer
-            metadata: Additional metadata
-            
-        Returns:
-            True if saved successfully
-        """
-        if not self.client:
-            print("⚠️ Cannot save Q&A pair - missing client")
-            return False
-            
-        try:
-            # Create embedding for the question
-            question_vector = self._embed_query(question)
-            if not question_vector:
-                print("⚠️ Could not create embedding, skipping save")
-                return False
-            
-            # Prepare payload
-            payload = {
-                'question': question,
-                'answer': answer,
-                'method': f'react_{self.mode}',
-                'model': self.model,
-                'mode': self.mode,
-                'timestamp': datetime.now().isoformat(),
-                'validated': False,  # Mark as AI-generated
-                **(metadata or {})
-            }
-            
-            # Generate unique point ID
-            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"react_{self.mode}_{question}_{datetime.now().isoformat()}"))
-            
-            # Store in RFP collection
-            self.client.upsert(
-                collection_name=self.RFP_COLLECTION,
-                points=[{
-                    "id": point_id,
-                    "vector": question_vector,
-                    "payload": payload
-                }]
-            )
-            
-            print(f"💾 Saved ReAct Q&A pair to database (mode: {self.mode})")
-            return True
-            
+                response = self.llm.invoke([HumanMessage(content=structuring_prompt)])
+                structured_text = response.content
+                
+                # Parse the structured response
+                return self._parse_structured_response(structured_text)
+                
+            else:
+                # Dev mode fallback - simple parsing of agent response
+                return {
+                    "answer": "Yes" if any(word in agent_response.lower() for word in ["yes", "support", "provide", "enable"]) else "No",
+                    "comments": agent_response[:500] + "..." if len(agent_response) > 500 else agent_response
+                }
+                
         except Exception as e:
-            print(f"⚠️ Failed to save Q&A pair: {e}")
-            return False
+            print(f"⚠️ Error in LLM structuring: {e}")
+            # Standard error response as requested
+            return {
+                "answer": "No",
+                "comments": "Please review this section"
+            }
+    
+    def _parse_structured_response(self, structured_text: str) -> Dict[str, str]:
+        """
+        Parse the structured response from Azure OpenAI
+        
+        Args:
+            structured_text: The formatted response from Azure OpenAI
+            
+        Returns:
+            dict: Parsed response with 'answer' and 'comments' keys
+        """
+        
+        lines = structured_text.strip().split('\n')
+        answer = "Unknown"
+        comments = ""
+        
+        collecting_comments = False
+        
+        for line in lines:
+            line = line.strip()
+            
+            if line.startswith("Answer:"):
+                answer = line.replace("Answer:", "").strip()
+                collecting_comments = False
+                
+            elif line.startswith("Comments:"):
+                comments = line.replace("Comments:", "").strip()
+                collecting_comments = True
+                
+            elif collecting_comments and line:
+                # Continue collecting comments on subsequent lines
+                comments += " " + line
+        
+        # Clean up the response and handle malformed responses
+        if answer not in ["Yes", "No", "Partial"]:
+            # If response is not properly structured, use standard error response
+            answer = "No"
+            comments = "Please review this section"
+        
+        if not comments or comments.strip() == "":
+            comments = "Please review this section"
+        
+        return {
+            "answer": answer,
+            "comments": comments
+        }
+    
+    def process_rfp_excel(self, excel_path: str, output_path: str = None) -> tuple[str, list]:
+        """
+        Process an Excel file with RFP questions and fill Answer/Comments columns
+        
+        Args:
+            excel_path: Path to the Excel file with columns 'Question', 'Answer', 'Comments'
+            output_path: Optional path for output file (defaults to adding '_processed' to input)
+            
+        Returns:
+            tuple: (Path to the processed Excel file, List of question vectors and metadata)
+        """
+        try:
+            import pandas as pd
+            from pathlib import Path
+            
+            print(f"📊 Processing Excel file: {excel_path}")
+            
+            # Load the Excel file
+            df = pd.read_excel(excel_path)
+            
+            # Validate required columns
+            required_columns = ['Question', 'Answer', 'Comments']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            print(f"✅ Excel loaded with {len(df)} questions")
+            
+            # Set output path if not provided
+            if output_path is None:
+                input_path = Path(excel_path)
+                output_path = input_path.parent / f"{input_path.stem}_processed{input_path.suffix}"
+            
+            # Process each question and collect vectors
+            processed_count = 0
+            errors = []
+            question_vectors = []  # Store vectors and metadata for vector DB
+            
+            for index, row in df.iterrows():
+                question = row['Question']
+                
+                # Skip if question is empty or Answer already filled
+                if pd.isna(question) or not question.strip():
+                    print(f"⏭️ Skipping row {index + 1}: Empty question")
+                    continue
+                
+                if pd.notna(row['Answer']) and row['Answer'].strip():
+                    print(f"⏭️ Skipping row {index + 1}: Answer already exists")
+                    continue
+                
+                try:
+                    print(f"\n🤖 Processing question {index + 1}/{len(df)}: {question[:60]}...")
+                    
+                    # Use the ReAct agent to process the question
+                    result = self.answer_rfp_question(question)
+                    
+                    # Update the dataframe
+                    df.at[index, 'Answer'] = result['answer']
+                    df.at[index, 'Comments'] = result['comments']
+                    
+                    # Collect vector and metadata for vector DB
+                    if result.get('question_vector'):
+                        question_vectors.append({
+                            'vector': result['question_vector'],
+                            'question': result['question'],
+                            'answer': result['answer'],
+                            'comments': result['comments'],
+                            'row_index': index
+                        })
+                    
+                    processed_count += 1
+                    print(f"✅ Question {index + 1} completed: {result['answer']}")
+                    
+                    # Save intermediate progress every 5 questions
+                    if processed_count % 5 == 0:
+                        df.to_excel(output_path, index=False)
+                        print(f"💾 Intermediate save: {processed_count} questions processed")
+                    
+                except Exception as e:
+                    error_msg = f"Error processing question {index + 1}: {str(e)}"
+                    errors.append(error_msg)
+                    print(f"❌ {error_msg}")
+                    
+                    # Use standard error response as requested
+                    df.at[index, 'Answer'] = "No"
+                    df.at[index, 'Comments'] = "Please review this section"
+                    
+                    # Still try to collect vector for failed questions (if embedding worked)
+                    try:
+                        question_vector = self._embed_query(question)
+                        if question_vector:
+                            question_vectors.append({
+                                'vector': question_vector,
+                                'question': question,
+                                'answer': "No",
+                                'comments': "Please review this section",
+                                'row_index': index
+                            })
+                    except:
+                        pass  # Skip vector collection if embedding also failed
+            
+            # Final save
+            df.to_excel(output_path, index=False)
+            
+            # Summary report
+            print(f"\n📊 PROCESSING COMPLETE!")
+            print(f"✅ Successfully processed: {processed_count} questions")
+            print(f"❌ Errors encountered: {len(errors)}")
+            print(f"🔢 Question vectors collected: {len(question_vectors)}")
+            print(f"💾 Output saved to: {output_path}")
+            
+            if errors:
+                print(f"\n🔍 Error details:")
+                for error in errors[:5]:  # Show first 5 errors
+                    print(f"   - {error}")
+                if len(errors) > 5:
+                    print(f"   ... and {len(errors) - 5} more errors")
+            
+            return str(output_path), question_vectors
+            
+        except ImportError:
+            raise ImportError("pandas required for Excel processing. Run: pip install pandas openpyxl")
+        except Exception as e:
+            print(f"❌ Error processing Excel file: {e}")
+            raise
+    
+    def process_rfp_excel_batch(self, excel_path: str, batch_size: int = 3, output_path: str = None) -> tuple[str, list]:
+        """
+        Process an Excel file in batches to avoid overwhelming the API
+        
+        Args:
+            excel_path: Path to the Excel file
+            batch_size: Number of questions to process in each batch
+            output_path: Optional path for output file
+            
+        Returns:
+            tuple: (Path to the processed Excel file, List of question vectors and metadata)
+        """
+        try:
+            import pandas as pd
+            import time
+            from pathlib import Path
+            
+            print(f"📊 Processing Excel file in batches of {batch_size}: {excel_path}")
+            
+            # Load the Excel file
+            df = pd.read_excel(excel_path)
+            
+            # Validate required columns
+            required_columns = ['Question', 'Answer', 'Comments']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            print(f"✅ Excel loaded with {len(df)} questions")
+            
+            # Set output path if not provided
+            if output_path is None:
+                input_path = Path(excel_path)
+                output_path = input_path.parent / f"{input_path.stem}_processed{input_path.suffix}"
+            
+            # Get questions that need processing
+            questions_to_process = []
+            for index, row in df.iterrows():
+                question = row['Question']
+                if (not pd.isna(question) and question.strip() and 
+                    (pd.isna(row['Answer']) or not row['Answer'].strip())):
+                    questions_to_process.append(index)
+            
+            print(f"📋 {len(questions_to_process)} questions need processing")
+            
+            # Process in batches
+            processed_count = 0
+            batch_count = 0
+            question_vectors = []  # Store vectors and metadata for vector DB
+            
+            for i in range(0, len(questions_to_process), batch_size):
+                batch_indices = questions_to_process[i:i + batch_size]
+                batch_count += 1
+                
+                print(f"\n🔄 Processing batch {batch_count} ({len(batch_indices)} questions)...")
+                
+                for index in batch_indices:
+                    question = df.at[index, 'Question']
+                    
+                    try:
+                        print(f"🤖 Question {index + 1}: {question[:50]}...")
+                        
+                        # Use the ReAct agent
+                        result = self.answer_rfp_question(question)
+                        
+                        # Update the dataframe
+                        df.at[index, 'Answer'] = result['answer']
+                        df.at[index, 'Comments'] = result['comments']
+                        
+                        # Collect vector and metadata for vector DB
+                        if result.get('question_vector'):
+                            question_vectors.append({
+                                'vector': result['question_vector'],
+                                'question': result['question'],
+                                'answer': result['answer'],
+                                'comments': result['comments'],
+                                'row_index': index
+                            })
+                        
+                        processed_count += 1
+                        print(f"✅ Completed: {result['answer']}")
+                        
+                    except Exception as e:
+                        print(f"❌ Error: {e}")
+                        # Use standard error response as requested
+                        df.at[index, 'Answer'] = "No"
+                        df.at[index, 'Comments'] = "Please review this section"
+                        
+                        # Still try to collect vector for failed questions
+                        try:
+                            question_vector = self._embed_query(question)
+                            if question_vector:
+                                question_vectors.append({
+                                    'vector': question_vector,
+                                    'question': question,
+                                    'answer': "No",
+                                    'comments': "Please review this section",
+                                    'row_index': index
+                                })
+                        except:
+                            pass  # Skip vector collection if embedding also failed
+                
+                # Save after each batch
+                df.to_excel(output_path, index=False)
+                print(f"💾 Batch {batch_count} saved. Total processed: {processed_count}")
+                
+                # Small delay between batches to avoid overwhelming the API
+                if i + batch_size < len(questions_to_process):
+                    print("⏸️ Brief pause between batches...")
+                    time.sleep(2)
+            
+            print(f"\n🎉 BATCH PROCESSING COMPLETE!")
+            print(f"📊 Processed {processed_count} questions in {batch_count} batches")
+            print(f"🔢 Question vectors collected: {len(question_vectors)}")
+            print(f"💾 Final output: {output_path}")
+            
+            return str(output_path), question_vectors
+            
+        except ImportError:
+            raise ImportError("pandas required for Excel processing. Run: pip install pandas openpyxl")
+        except Exception as e:
+            print(f"❌ Error in batch processing: {e}")
+            raise
 
-
-# Example usage and testing
-def test_react_retriever(mode="dev"):
-    """Test the ReAct retriever with sample questions"""
-    print(f"🧪 Testing ReAct RFP Retriever in {mode.upper()} mode")
-    
-    # Initialize retriever
-    try:
-        retriever = ReactRFPRetriever(mode=mode)
-        print(f"✅ ReAct retriever initialized successfully in {mode} mode")
-    except Exception as e:
-        print(f"❌ Failed to initialize retriever: {e}")
-        return None
-    
-    # Test questions
-    test_questions = [
-        "What is your company's data security policy?",
-        "How do you handle GDPR compliance?",
-        "What SaaS architecture do you use for scalability?"
-    ]
-    
-    print(f"\n🔍 Testing with {len(test_questions)} questions:")
-    
-    # Test single question first
-    print("\n" + "="*60)
-    print(f"Testing single question in {mode} mode:")
-    result = retriever.answer_rfp_question(test_questions[0])
-    print(f"Question: {result['question']}")
-    print(f"Answer: {result['answer']}")  # Yes/No
-    print(f"Comments: {result['comments'][:200]}...")  # Explanation
-    print(f"Method: {result['method']}")
-    print(f"Model: {result['model']}")
-    print(f"Mode: {result['mode']}")
-    print(f"Full Response Length: {len(result.get('full_response', ''))} chars")
-    
-    # Test batch processing (limit for testing)
-    print("\n" + "="*60)
-    print(f"Testing batch processing in {mode} mode:")
-    results = retriever.batch_answer_questions(test_questions[:2])  # Limit for testing
-    
-    print(f"\n🎉 Test complete! Processed {len(results)} questions in {mode} mode")
-    
-    return retriever
-
-def test_both_modes():
-    """Test both development and production modes"""
-    print("🧪 Testing ReAct RFP Retriever - Both Modes")
-    print("="*60)
-    
-    # Test development mode
-    print("\n🛠️ DEVELOPMENT MODE TEST")
-    print("-" * 40)
-    dev_retriever = test_react_retriever("dev")
-    
-    # Check if OpenAI is available for production test
-    if settings.OPENAI_API_KEY:
-        print("\n🚀 PRODUCTION MODE TEST")
-        print("-" * 40)
-        prod_retriever = test_react_retriever("prod")
-    else:
-        print("\n⚠️ PRODUCTION MODE SKIPPED")
-        print("Set OPENAI_API_KEY in .env to test production mode")
-    
-    print("\n🎉 Mode comparison test complete!")
-
-if __name__ == "__main__":
-    import sys
-    
-    # Check command line arguments for mode selection
-    if len(sys.argv) > 1 and sys.argv[1] in ["dev", "prod", "both"]:
-        mode = sys.argv[1]
-        if mode == "both":
-            test_both_modes()
-        else:
-            test_react_retriever(mode)
-    else:
-        print("Usage: python react_retriever.py [dev|prod|both]")
-        print("Testing in development mode by default...")
-        test_react_retriever("dev")

@@ -250,8 +250,92 @@
       "texts_preview": [
         "__dim_probe__"
       ]
+    },
+    {
+      "timestamp": "2025-08-20T20:53:03.554284",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:04:17.295245",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:04:54.121629",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:07:31.428171",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:13:04.726954",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:17:01.570478",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
+    },
+    {
+      "timestamp": "2025-08-20T21:46:20.330615",
+      "provider": "azure_openai",
+      "model": "team11-embedding",
+      "num_texts": 1,
+      "total_characters": 13,
+      "estimated_tokens": 3,
+      "estimated_cost_usd": 3.9e-07,
+      "texts_preview": [
+        "__dim_probe__"
+      ]
     }
   ],
-  "total_tokens": 5703,
-  "total_requests": 20
+  "total_tokens": 5724,
+  "total_requests": 27
 }

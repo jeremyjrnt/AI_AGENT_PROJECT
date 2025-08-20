@@ -46,11 +46,11 @@ except Exception as e:
 
 # Import indexing functions
 try:
-    from qdrant.indexer import index_internal_data_with_source, index_completed_rfp
+    from qdrant.indexer import index_internal_data_with_source, upsert_rfp
     from qdrant.rfp_tracker import get_rfp_tracker
 except Exception as e:
     index_internal_data_with_source = None
-    index_completed_rfp = None
+    upsert_rfp = None
     get_rfp_tracker = None
 
 # Import retriever for pre-completion
@@ -161,58 +161,84 @@ def handle_internal_docs_upload(uploaded_files, source_name):
         return 0, []
 
 
-def submit_completed_rfp(current_file, completed_df, submitter_name=None):
-    """Submit completed RFP: save to Excel, index in vector DB, and move to completed folder"""
+def submit_completed_rfp(current_file, completed_df, validator_name, submitter_name, source=None, question_vectors=None):
+    """Submit completed RFP: save to Excel, index in vector DB with pre-computed vectors, and manage file movement"""
     try:
+        # Create necessary directories
         source_path = project_root / "data" / "new_RFPs" / current_file
-        completed_folder = project_root / "data" / "completed_RFPs"
         outputs_folder = project_root / "outputs"
-        completed_folder.mkdir(parents=True, exist_ok=True)
+        past_rfps_folder = project_root / "data" / "past_RFPs_pdf"  # New directory for archived PDFs
+        completed_rfps_folder = project_root / "data" / "completed_RFPs_excel"  # New directory for Excel files
+        
         outputs_folder.mkdir(parents=True, exist_ok=True)
+        past_rfps_folder.mkdir(parents=True, exist_ok=True)
+        completed_rfps_folder.mkdir(parents=True, exist_ok=True)
         
         # Add timestamp to filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         name_parts = current_file.rsplit('.', 1)
-        new_filename = f"{name_parts[0]}_completed_{timestamp}.{name_parts[1]}"
         
         # Create Excel filename for completed RFP
-        excel_filename = f"rfp_completed_{name_parts[0]}_{timestamp}.xlsx"
+        excel_filename = f"completed_{name_parts[0]}_{timestamp}.xlsx"
         excel_filepath = outputs_folder / excel_filename
         
-        # Save completed RFP to Excel
-        completed_df.to_excel(excel_filepath, index=False)
+        # Add metadata to DataFrame before saving
+        metadata_df = completed_df.copy()
+        # Add Validator Name to each row if not already present
+        if 'Validator Name' not in metadata_df.columns:
+            metadata_df['Validator Name'] = validator_name
+        else:
+            # Fill empty validator name cells
+            metadata_df['Validator Name'] = metadata_df['Validator Name'].fillna(validator_name)
+            metadata_df.loc[metadata_df['Validator Name'] == '', 'Validator Name'] = validator_name
         
-        # Index completed RFP in vector database
+        # Save completed RFP to Excel (outputs folder first)
+        metadata_df.to_excel(excel_filepath, index=False)
+        
+        # Index completed RFP in vector database using pre-computed vectors
         indexed_count = 0
-        if index_completed_rfp is not None:
+        if upsert_rfp is not None and question_vectors is not None:
             try:
-                # Prepare source information with submitter name
-                rfp_source_info = {
-                    "client_name": "Unknown",  # Could be extracted from filename
-                    "project": name_parts[0],
-                    "completion_date": datetime.now().strftime("%Y-%m-%d"),
-                    "completion_timestamp": timestamp,
-                    "original_filename": current_file,
-                    "completed_by": submitter_name or "UI_User",
-                    "submission_method": "streamlit_interface"
-                }
-                
-                # Index the completed RFP Q&A pairs
-                indexed_count = index_completed_rfp(str(excel_filepath), rfp_source_info)
+                # Use the upsert_rfp function with pre-computed vectors and enhanced metadata
+                indexed_count = upsert_rfp(
+                    rfp_file_path=str(excel_filepath),
+                    question_vectors=question_vectors,
+                    submitter_name=submitter_name,
+                    source=source
+                )
+                print(f"✅ Successfully indexed {indexed_count} Q&A pairs with pre-computed vectors")
+                print(f"📝 Metadata: Validator={validator_name}, Submitter={submitter_name}, Source={source or 'Not specified'}")
                 
             except Exception as e:
-                st.warning(f"RFP saved but indexing failed: {e}")
+                st.warning(f"RFP saved but vector indexing failed: {e}")
+                print(f"❌ Vector indexing error: {e}")
+        elif upsert_rfp is None:
+            st.info("Vector indexing not available - upsert_rfp function not loaded")
+        elif question_vectors is None:
+            st.warning("No pre-computed vectors available. Run Pre-complete first to generate vectors.")
         
-        # Move original PDF to completed folder
-        dest_path = completed_folder / new_filename
-        if source_path.exists():
-            shutil.move(str(source_path), str(dest_path))
-            return True, new_filename, excel_filename, indexed_count
+        # File management after successful indexing
+        success_message = ""
+        if indexed_count > 0:
+            # 1. Move PDF from new_RFPs to past_RFPs_pdf
+            if source_path.exists():
+                dest_pdf_path = past_rfps_folder / current_file
+                shutil.move(str(source_path), str(dest_pdf_path))
+                print(f"✅ Moved PDF: {current_file} -> past_RFPs_pdf")
+                success_message += f"PDF moved to past_RFPs_pdf. "
+            
+            # 2. Copy Excel to completed_RFPs_excel
+            completed_excel_path = completed_rfps_folder / excel_filename
+            shutil.copy2(str(excel_filepath), str(completed_excel_path))
+            print(f"✅ Saved Excel: {excel_filename} -> completed_RFPs_excel")
+            success_message += f"Excel saved to completed_RFPs_excel. "
+            
+            return True, f"Successfully submitted! {success_message}Indexed {indexed_count} Q&A pairs.", excel_filename, indexed_count
         else:
-            return False, "Source file not found", None, 0
+            return False, "No questions were indexed. Files not moved.", excel_filename, 0
             
     except Exception as e:
-        return False, str(e), None, 0
+        return False, f"Error during submission: {str(e)}", None, 0
 
 
 def parse_selected_rfp(selected_file):
@@ -571,15 +597,15 @@ def show_rfp_manager():
     st.markdown("---")
     
     # Sidebar for file management
-    st.sidebar.header("File Management")
+    st.sidebar.title("File Management")
     
     # File upload section for RFPs
     st.sidebar.subheader("Upload New RFPs")
     uploaded_files = st.sidebar.file_uploader(
-        "Drag and drop PDF files here",
+        "",
         type=['pdf'],
         accept_multiple_files=True,
-        help="Upload PDF files to add them to the new_RFPs folder",
+        help="Upload PDF files",
         key="rfp_uploader"
     )
     
@@ -597,17 +623,17 @@ def show_rfp_manager():
     # Source name input
     source_name = st.sidebar.text_input(
         "Source Name",
-        value="company_docs",
+        value="",
         help="Name to identify this batch of documents",
         key="source_name_files"
     )
     
     # Individual files uploader
     internal_docs = st.sidebar.file_uploader(
-        "Upload documents (.txt, .md, .zip)",
-        type=['txt', 'md', 'markdown', 'zip'],
+        "Zip containing html and folders",
+        type=['zip'],
         accept_multiple_files=True,
-        help="Upload text files or ZIP archives",
+        help="Upload ZIP archives",
         key="internal_docs_files"
     )
     
@@ -625,101 +651,7 @@ def show_rfp_manager():
                     
                     st.rerun()
                 else:
-                    st.sidebar.warning("⚠️ No documents were indexed")
-    
-    st.sidebar.markdown("---")
-    
-    # RFP Statistics Section
-    st.sidebar.header("RFP Statistics")
-    
-    if get_rfp_tracker:
-        try:
-            tracker = get_rfp_tracker()
-            stats = tracker.get_stats()
-            
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                st.metric("Current RFP #", stats['current_rfp_number'])
-                st.metric("Total Processed", stats['total_rfps_processed'])
-            
-            with col2:
-                cleanup_status = "On" if stats['cleanup_enabled'] else "Off"
-                st.metric("Auto Cleanup", cleanup_status)
-                st.metric("Max Age Diff", stats['max_age_difference'])
-            
-            # Cleanup controls
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                if st.button("🧹 Force Cleanup", help="Clean old RFP data now"):
-                    cleanup_count = tracker.cleanup_old_rfps(force=True)
-                    if cleanup_count > 0:
-                        st.success(f"Cleaned {cleanup_count} old documents")
-                    else:
-                        st.info("No old documents found")
-            
-            with col2:
-                if st.button("Reset Counter", help="Reset RFP counter (use carefully)"):
-                    st.session_state.show_reset_dialog = True
-            
-            # Reset dialog
-            if st.session_state.get('show_reset_dialog', False):
-                with st.sidebar.expander("Reset RFP Counter", expanded=True):
-                    new_value = st.number_input("New counter value", min_value=0, value=0)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Confirm Reset"):
-                            tracker.reset_counter(new_value)
-                            st.success(f"Counter reset to {new_value}")
-                            st.session_state.show_reset_dialog = False
-                            st.rerun()
-                    with col2:
-                        if st.button("Cancel"):
-                            st.session_state.show_reset_dialog = False
-                            st.rerun()
-            
-        except Exception as e:
-            st.sidebar.error(f"Error loading RFP stats: {e}")
-    else:
-        st.sidebar.info("RFP tracking not available")
-    
-    st.sidebar.markdown("---")
-    
-    # RFP Statistics Section
-    if get_rfp_tracker is not None:
-        st.sidebar.header("RFP Statistics")
-        
-        try:
-            tracker = get_rfp_tracker()
-            stats = tracker.get_stats()
-            
-            # Display key metrics
-            col1, col2 = st.sidebar.columns(2)
-            with col1:
-                st.metric("Current RFP", stats['current_rfp_number'])
-            with col2:
-                st.metric("Total Processed", stats['total_rfps_processed'])
-            
-            # Cleanup settings
-            st.sidebar.write(f"Cleanup: {'Enabled' if stats['cleanup_enabled'] else 'Disabled'}")
-            st.sidebar.write(f"Max Age: {stats['max_age_difference']} RFPs")
-            
-            # Management buttons
-            if st.sidebar.button("Inspect Collection", help="View RFP age distribution"):
-                with st.spinner("Inspecting RFP collection..."):
-                    # This could be expanded to show results in main area
-                    st.sidebar.success("Check terminal for detailed analysis")
-            
-            if st.sidebar.button("Force Cleanup", help="Remove old RFP documents"):
-                with st.spinner("🧹 Cleaning up old RFPs..."):
-                    cleanup_count = tracker.cleanup_old_rfps(force=True)
-                    if cleanup_count > 0:
-                        st.sidebar.success(f"Cleaned {cleanup_count} documents")
-                    else:
-                        st.sidebar.info("No cleanup needed")
-                    st.rerun()
-            
-        except Exception as e:
-            st.sidebar.error(f"RFP Stats Error: {e}")
+                    st.sidebar.warning("No documents were indexed")
     
     st.sidebar.markdown("---")
     
@@ -830,126 +762,90 @@ def show_rfp_manager():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("Pre-complete", type="primary", use_container_width=True, help="Auto-fill answers using AI with live progress"):
+            if st.button("Pre-complete", type="primary", use_container_width=True, help="Auto-fill answers using Reasoning and Action"):
                 if ReactRFPRetriever is None or get_qdrant_client is None:
                     st.error("ReAct retriever components not available")
                 else:
-                    # Check if OpenAI key is available
-                    if not settings.OPENAI_API_KEY:
-                        st.error("OpenAI API key required. Please set OPENAI_API_KEY in .env file.")
+                    # Check Azure OpenAI configuration
+                    if not settings.AZURE_OPENAI_API_KEY:
+                        st.error("Azure OpenAI API key required. Please set AZURE_OPENAI_API_KEY in .env file.")
                     else:
-                        # Process all questions with AI with live updates (production mode only)
-                        with st.spinner(f"Processing {len(edited_df)} questions with AI..."):
-                            try:
-                                # Initialize ReAct retriever in production mode
-                                setup_collections_dynamic()
-                                client = get_qdrant_client()
-                                react_retriever = ReactRFPRetriever(client=client, mode="prod")
+                        try:
+                            # Initialize ReAct retriever in production mode
+                            setup_collections_dynamic()
+                            client = get_qdrant_client()
+                            react_retriever = ReactRFPRetriever(client=client, mode="prod")
+                            
+                            # Process questions directly in the session DataFrame
+                            processed_df = edited_df.copy()
+                            
+                            # Get questions that need processing
+                            questions_to_process = []
+                            for index, row in processed_df.iterrows():
+                                question = row['Questions']
+                                if (pd.notna(question) and str(question).strip() and 
+                                    (pd.isna(row['Answer']) or not str(row['Answer']).strip() or 
+                                     str(row['Answer']).strip() == '' or str(row['Answer']).strip() == 'nan')):
+                                    questions_to_process.append(index)
+                            
+                            total_questions = len(questions_to_process)
+                            
+                            if total_questions == 0:
+                                st.info("All questions already have answers. Clear the Answer column if you want to reprocess.")
+                            else:
+                                # Simple progress counter below button
+                                progress_placeholder = st.empty()
                                 
-                                # Create container for live updates
-                                progress_container = st.container()
-                                table_container = st.container()
+                                processed_count = 0
+                                question_vectors = []  # Store vectors for later upsert
                                 
-                                with progress_container:
-                                    progress_bar = st.progress(0)
-                                    status_text = st.empty()
-                                
-                                # Process each question with live table updates
-                                processed_df = edited_df.copy()
-                                
-                                for idx, row in processed_df.iterrows():
-                                    question = row['Questions']
-                                    if not question or len(str(question).strip()) < 10:
-                                        continue
+                                # Process each question with minimal display
+                                for index in questions_to_process:
+                                    question = processed_df.at[index, 'Questions']
                                     
-                                    # Update progress
-                                    progress = (idx + 1) / len(processed_df)
-                                    progress_bar.progress(progress)
-                                    status_text.text(f"Processing question {idx + 1}/{len(processed_df)}: {str(question)[:60]}...")
+                                    # Update simple counter
+                                    processed_count += 1
+                                    progress_placeholder.info(f"Processing: {processed_count}/{total_questions} questions")
                                     
                                     try:
-                                        # Use ReAct to answer the question with structured Yes/No format
+                                        # Use ReAct agent to answer the question
                                         result = react_retriever.answer_rfp_question(str(question))
                                         
-                                        # Extract structured answer and comments
-                                        binary_answer = result.get('answer', 'No')  # Yes/No
-                                        detailed_comments = result.get('comments', 'No detailed explanation provided')
+                                        # Update the DataFrame
+                                        processed_df.at[index, 'Answer'] = result['answer']
+                                        processed_df.at[index, 'Comments'] = result['comments']
                                         
-                                        # Fill the Answer column with Yes/No
-                                        processed_df.at[idx, 'Answer'] = binary_answer
-                                        
-                                        # Fill the Comments column with detailed explanation
-                                        if row['Comments'] and str(row['Comments']).strip() and str(row['Comments']).strip() != 'nan':
-                                            # Preserve existing comments and add AI explanation
-                                            processed_df.at[idx, 'Comments'] = f"{str(row['Comments']).strip()} | AI: {detailed_comments}"
-                                        else:
-                                            # Use only AI explanation
-                                            processed_df.at[idx, 'Comments'] = f"AI: {detailed_comments}"
-                                        
-                                        # Show live update of the table with current progress
-                                        with table_container:
-                                            st.subheader(f"📝 Live Progress - Question {idx + 1}/{len(processed_df)} completed")
-                                            # Show only processed rows so far for performance
-                                            display_df = processed_df.iloc[:idx + 1].copy()
-                                            # Add status indicator
-                                            for i in range(len(display_df)):
-                                                if i <= idx:
-                                                    # Show completed rows with check mark
-                                                    if display_df.iloc[i]['Answer']:
-                                                        display_df.iloc[i, 0] = f"{display_df.iloc[i, 0]}"
-                                            
-                                            st.dataframe(
-                                                display_df[['Questions', 'Answer', 'Comments']],
-                                                use_container_width=True,
-                                                hide_index=True
-                                            )
-                                        
-                                        # Small delay to make updates visible
-                                        import time
-                                        time.sleep(0.5)
+                                        # Collect vector for later upsert to vector DB
+                                        if result.get('question_vector'):
+                                            question_vectors.append(result['question_vector'])
                                         
                                     except Exception as e:
-                                        st.warning(f"Could not process question {idx + 1} with AI: {e}")
-                                        # Set default values for errors
-                                        processed_df.at[idx, 'Answer'] = 'No'
-                                        processed_df.at[idx, 'Comments'] = f"Error: Could not process with AI - {str(e)[:100]}"
+                                        # Use standardized error response
+                                        processed_df.at[index, 'Answer'] = "No"
+                                        processed_df.at[index, 'Comments'] = "Please review this section"
                                         
-                                        # Still show the update even for errors
-                                        with table_container:
-                                            st.subheader(f"⚠️ Question {idx + 1}/{len(processed_df)} - Processing Error")
-                                            display_df = processed_df.iloc[:idx + 1].copy()
-                                            st.dataframe(
-                                                display_df[['Questions', 'Answer', 'Comments']],
-                                                use_container_width=True,
-                                                hide_index=True
-                                            )
-                                        
-                                        time.sleep(0.5)
-                                        continue
+                                        # Still try to get vector for failed questions
+                                        try:
+                                            question_vector = react_retriever._embed_query(str(question))
+                                            if question_vector:
+                                                question_vectors.append(question_vector)
+                                        except:
+                                            question_vectors.append([])  # Empty vector placeholder
                                 
-                                progress_bar.progress(1.0)
-                                status_text.text(f"AI processing complete! All {len(processed_df)} questions processed.")
+                                # Store vectors in session state for submit button
+                                st.session_state.rfp_question_vectors = question_vectors
                                 
-                                # Final table display
-                                with table_container:
-                                    st.subheader("Final Results - All Questions Completed")
-                                    st.dataframe(
-                                        processed_df[['Questions', 'Answer', 'Comments']],
-                                        use_container_width=True,
-                                        hide_index=True
-                                    )
-                                
-                                # Update the session state with processed data
+                                # Update session state with final results
                                 st.session_state.rfp_data = processed_df
-                                st.success(f"Successfully processed {len(processed_df)} questions with AI!")
                                 
-                                # Auto-refresh after 2 seconds to show in main editor
-                                import time
-                                time.sleep(2)
-                                st.rerun()  # Refresh to show updated data
+                                # Clear progress and show success
+                                progress_placeholder.success(f"Completed: {processed_count} questions processed with ReAct AI! ({len(question_vectors)} vectors collected)")
                                 
-                            except Exception as e:
-                                st.error(f"AI processing failed: {e}")
+                                # Auto-refresh to show final results in main table
+                                st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"AI processing failed: {e}")
         
         with col2:
             if st.button("Save Excel", type="secondary", use_container_width=True):
@@ -964,7 +860,10 @@ def show_rfp_manager():
                 st.success(f"Saved to: {filepath}")
         
         with col3:
-            # Submit button with validator name
+            # Submit section with all metadata fields
+            st.markdown("**Submit Information**")
+            
+            # Create two rows for the input fields
             validator_name = st.text_input(
                 "Validator Name",
                 placeholder="Enter validator name",
@@ -972,24 +871,57 @@ def show_rfp_manager():
                 key="validator_name_input"
             )
             
+            # Second row with submitter and source
+            sub_col1, sub_col2 = st.columns(2)
+            with sub_col1:
+                submitter_name = st.text_input(
+                    "Submitter Name",
+                    placeholder="Enter submitter name",
+                    help="Name of the person submitting this RFP",
+                    key="submitter_name_input"
+                )
+            
+            with sub_col2:
+                source = st.text_input(
+                    "Source",
+                    placeholder="e.g., Client, Internal, Tender",
+                    help="Source or origin of this RFP (optional)",
+                    key="source_input"
+                )
+            
             if st.button("Submit", type="primary", use_container_width=True, help="Complete RFP: Save, Index in Vector DB, and Archive"):
+                # Validation
+                missing_fields = []
                 if not validator_name or not validator_name.strip():
-                    st.error("Please enter the validator name before submitting")
+                    missing_fields.append("Validator Name")
+                if not submitter_name or not submitter_name.strip():
+                    missing_fields.append("Submitter Name")
+                
+                if missing_fields:
+                    st.error(f"Please enter the following required fields: {', '.join(missing_fields)}")
                 else:
                     with st.spinner("Submitting RFP and indexing in vector database..."):
+                        # Get pre-computed vectors from session state
+                        question_vectors = st.session_state.get('rfp_question_vectors', None)
+                        
                         success, result, excel_file, indexed_count = submit_completed_rfp(
                             st.session_state.current_file, 
                             edited_df, 
-                            validator_name.strip()
+                            validator_name.strip(),
+                            submitter_name.strip(),
+                            source.strip() if source else None,
+                            question_vectors
                         )
                         if success:
                             st.success(f"""
                             **RFP Successfully Submitted!**
                             
-                            👤 **Validated by**: {validator_name.strip()}
-                            📁 **Archived as**: {result}
-                            💾 **Excel saved**: {excel_file}
-                            🔗 **Vector DB indexed**: {indexed_count} Q&A pairs
+                            **Validated by**: {validator_name.strip()}
+                            **Submitted by**: {submitter_name.strip()}
+                            **Source**: {source.strip() if source else "Not specified"}
+                            **Archived as**: {result}
+                            **Excel saved**: {excel_file}
+                            **Vector DB indexed**: {indexed_count} Q&A pairs
                             
                             The RFP knowledge is now available for future AI processing!
                             """)
@@ -998,6 +930,8 @@ def show_rfp_manager():
                                 del st.session_state.rfp_data
                             if 'current_file' in st.session_state:
                                 del st.session_state.current_file
+                            if 'rfp_question_vectors' in st.session_state:
+                                del st.session_state.rfp_question_vectors
                             st.rerun()
                         else:
                             st.error(f"Failed to submit RFP: {result}")

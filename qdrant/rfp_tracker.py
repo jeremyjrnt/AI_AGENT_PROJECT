@@ -99,7 +99,8 @@ class RFPTracker:
             
             for point in scroll_result[0]:  # scroll_result is (points, next_page_offset)
                 payload = point.payload or {}
-                rfp_number = payload.get("rfp_number")
+                # Check both rfp_age (new) and rfp_number (legacy) fields
+                rfp_number = payload.get("rfp_age") or payload.get("rfp_number")
                 
                 if rfp_number is not None and rfp_number < min_rfp_to_keep:
                     points_to_delete.append(point.id)

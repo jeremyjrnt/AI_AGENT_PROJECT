@@ -152,6 +152,7 @@ def upsert_rfp(
     rfp_file_path: Union[str, Path],
     question_vectors: list,
     submitter_name: str,
+    source: str = None,
     collection_name: str = RFP_QA_COLLECTION,
     auto_cleanup: bool = True
 ) -> int:
@@ -162,6 +163,7 @@ def upsert_rfp(
         rfp_file_path: Path to RFP Excel file with Question/Answer/Comments columns
         question_vectors: Pre-computed embedding vectors for questions (list of vectors)
         submitter_name: Single submitter name for the entire RFP
+        source: Source or origin of this RFP (e.g., Client, Internal, Tender)
         collection_name: Target Qdrant collection
         auto_cleanup: Whether to perform automatic cleanup of old RFPs
         
@@ -176,6 +178,7 @@ def upsert_rfp(
     
     print(f"🔄 Parsing RFP from: {rfp_path.name}")
     print(f"📝 Submitter: {submitter_name}")
+    print(f"🏢 Source: {source or 'Not specified'}")
     print(f"🔢 Received {len(question_vectors)} pre-computed vectors")
     
     # Get RFP tracker and assign next RFP number (age counter)
@@ -215,7 +218,7 @@ def upsert_rfp(
             
             # Get validator name (try different column names)
             validator_name = ""
-            for val_col in ['Validator', 'Validator_Name', 'ValidatorName', 'validator_name']:
+            for val_col in ['Validator Name', 'Validator', 'Validator_Name', 'ValidatorName', 'validator_name']:
                 if val_col in df.columns:
                     validator_name = str(row.get(val_col, '')).strip()
                     break
@@ -223,10 +226,10 @@ def upsert_rfp(
             questions.append(question)
             valid_vectors.append(question_vectors[index])
             
-            # Prepare metadata
+            # Prepare enhanced metadata
             metadata = {
                 # Core RFP info
-                "source": "past-rfp",
+                "source": source or "RFP_Processing",
                 "source_type": "completed_rfp",
                 "rfp_name": rfp_path.stem,  # filename without extension
                 "rfp_file": rfp_path.name,
@@ -272,6 +275,7 @@ def upsert_rfp(
         indexed_count = len(points)
         
         print(f"✅ Successfully indexed {indexed_count} Q&A pairs")
+        print(f"📊 Metadata stored: submitter={submitter_name}, source={source or 'Not specified'}, validator_count={len([p for p in payloads if p['validator_name']])}")
         
         # Perform automatic cleanup after successful indexing
         if auto_cleanup and indexed_count > 0:
