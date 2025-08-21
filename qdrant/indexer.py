@@ -265,7 +265,6 @@ def upsert_data(
 
 def upsert_rfp(
     rfp_file_path: Union[str, Path],
-    question_vectors: list,
     submitter_name: str,
     source: str = None,
     collection_name: str = RFP_QA_COLLECTION,
@@ -273,134 +272,114 @@ def upsert_rfp(
 ) -> int:
     """
     Parse RFP Excel file with 'Question', 'Answer', 'Comments' columns and upsert to Qdrant.
-    
-    Args:
-        rfp_file_path: Path to RFP Excel file with Question/Answer/Comments columns
-        question_vectors: Pre-computed embedding vectors for questions (list of vectors)
-        submitter_name: Single submitter name for the entire RFP
-        source: Source or origin of this RFP (e.g., Client, Internal, Tender)
-        collection_name: Target Qdrant collection
-        auto_cleanup: Whether to perform automatic cleanup of old RFPs
-        
-    Returns:
-        int: Number of Q&A pairs successfully indexed
+    Embeddings are computed inside this function.
     """
     import pandas as pd
-    
+
     rfp_path = Path(rfp_file_path)
     if not rfp_path.exists():
         raise FileNotFoundError(f"RFP file not found: {rfp_file_path}")
-    
+
     print(f"🔄 Parsing RFP from: {rfp_path.name}")
     print(f"📝 Submitter: {submitter_name}")
     print(f"🏢 Source: {source or 'Not specified'}")
-    print(f"🔢 Received {len(question_vectors)} pre-computed vectors")
-    
+
     # Get RFP tracker and assign next RFP number (age counter)
     tracker = get_rfp_tracker()
     rfp_age = tracker.get_next_rfp_number()
-    
+
     try:
         # Read Excel file
         df = pd.read_excel(rfp_path)
         print(f"📋 Loaded Excel with {len(df)} rows and columns: {list(df.columns)}")
-        
+
         # Validate required columns
         required_cols = ['Question', 'Answer', 'Comments']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}. Found: {list(df.columns)}")
-        
+
         # Extract question data
         questions = []
         payloads = []
-        valid_vectors = []
-        
+
         for index, row in df.iterrows():
             question = str(row['Question']).strip()
-            answer = str(row['Answer']).strip() 
+            answer = str(row['Answer']).strip()
             comments = str(row['Comments']).strip()
-            
+
             # Skip empty questions
             if not question or question.lower() in ['nan', 'none', '']:
                 print(f"⚠️  Skipping row {index+1}: empty question")
                 continue
-            
-            # Check if we have corresponding vector
-            if index >= len(question_vectors):
-                print(f"⚠️  Skipping row {index+1}: no corresponding vector")
-                continue
-            
+
             # Get validator name (try different column names)
             validator_name = ""
             for val_col in ['Validator Name', 'Validator', 'Validator_Name', 'ValidatorName', 'validator_name']:
                 if val_col in df.columns:
                     validator_name = str(row.get(val_col, '')).strip()
                     break
-            
+
             questions.append(question)
-            valid_vectors.append(question_vectors[index])
-            
+
             # Prepare enhanced metadata
             metadata = {
-                # Core RFP info
                 "source": source or "RFP_Processing",
                 "source_type": "completed_rfp",
-                "rfp_name": rfp_path.stem,  # filename without extension
+                "rfp_name": rfp_path.stem,
                 "rfp_file": rfp_path.name,
                 "rfp_path": str(rfp_path),
-                "rfp_age": rfp_age,  # RFP counter/age
+                "rfp_age": rfp_age,
                 "submitter_name": submitter_name,
-                
-                # Question data
                 "question": question,
                 "answer": answer,
                 "comments": comments,
                 "validator_name": validator_name,
                 "question_index": index,
-                
-                # Technical metadata  
                 "indexed_at": datetime.now().isoformat(),
                 "document_type": "rfp_qa_pair",
                 "embedded_field": "question"
             }
-            
+
             payloads.append(metadata)
-        
+
         if not questions:
             print("❌ No valid questions found for indexing")
             return 0
-        
-        # Validate vector count matches question count
-        if len(valid_vectors) != len(questions):
-            raise ValueError(f"Vector count mismatch: {len(valid_vectors)} vectors != {len(questions)} questions")
-        
+
+        # Compute embeddings for all questions
+        print(f"🔎 Generating embeddings for {len(questions)} questions...")
+        emb = get_embeddings()
+        vectors = emb.embed_documents(questions)
+        if len(vectors) != len(questions):
+            raise ValueError(f"Vector count mismatch: {len(vectors)} vectors != {len(questions)} questions")
+
         print(f"✅ Extracted {len(questions)} valid Q&A pairs with matching vectors")
         print(f"🗃️ Indexing to {collection_name} with RFP age #{rfp_age}...")
-        
-        # Build points using provided vectors
+
+        # Build points using generated vectors
         points = [
             PointStruct(id=str(uuid4()), vector=vec, payload=pld)
-            for vec, pld in zip(valid_vectors, payloads)
+            for vec, pld in zip(vectors, payloads)
         ]
-        
+
         # Upsert to Qdrant
         client = get_qdrant_client()
         client.upsert(collection_name=collection_name, points=points)
         indexed_count = len(points)
-        
+
         print(f"✅ Successfully indexed {indexed_count} Q&A pairs")
         print(f"📊 Metadata stored: submitter={submitter_name}, source={source or 'Not specified'}, validator_count={len([p for p in payloads if p['validator_name']])}")
-        
+
         # Perform automatic cleanup after successful indexing
         if auto_cleanup and indexed_count > 0:
             print(f"🧹 Running automatic cleanup for RFP age #{rfp_age}...")
             cleanup_count = tracker.cleanup_old_rfps()
             if cleanup_count > 0:
                 print(f"✅ Cleaned up {cleanup_count} old RFP documents")
-        
+
         return indexed_count
-        
+
     except Exception as e:
         print(f"❌ Error parsing RFP: {e}")
         raise

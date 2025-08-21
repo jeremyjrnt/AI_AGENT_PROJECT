@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 try:
-    from usage_tracker import LocalUsageTracker
+    from tokens_count.usage_tracker import LocalUsageTracker
     usage_tracker = LocalUsageTracker("embeddings_usage.json")
 except ImportError:
     usage_tracker = None
@@ -79,7 +79,7 @@ def get_embeddings():
 
 
 class TrackedEmbeddings:
-    """Wrapper pour tracker l'utilisation des embeddings"""
+    """Track embedding usage with memory-only storage"""
     
     def __init__(self, base_embeddings, provider, model):
         self.base_embeddings = base_embeddings
