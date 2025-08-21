@@ -1,4 +1,4 @@
-# AI Agent RFP Management System
+# RFPilot - AI Agent RFP Management System
 
 Enterprise-grade Request for Proposal (RFP) automation system leveraging advanced AI, vector databases, and ReAct agents to streamline proposal response workflows.
 
@@ -9,12 +9,14 @@ This system provides intelligent automation for RFP processing through semantic 
 ## Core Features
 
 ### RFP Processing Pipeline
+
 - **Intelligent Document Parsing**: Automated extraction of questions from Excel and PDF documents
 - **Sequential Numbering System**: Automatic RFP numbering with age-based cleanup mechanisms
 - **Human Validation Workflow**: Structured validation process with complete audit trails
 - **Automated Export**: Generation of comprehensive Excel reports with completed responses
 
 ### AI-Powered Question Answering
+
 - **ReAct Agent Architecture**: Reasoning and Acting agents with structured tool usage
 - **Triple Retrieval System**: Simultaneous search across three knowledge sources:
   - Internal knowledge base documentation
@@ -24,6 +26,7 @@ This system provides intelligent automation for RFP processing through semantic 
 - **Multi-Model Support**: Azure OpenAI (production) and Ollama (development) configurations
 
 ### Vector Database Management
+
 - **Qdrant Integration**: High-performance vector similarity search
 - **Multiple Collections**: Logical separation of knowledge domains
 - **Semantic Search**: Cosine similarity on 384D or 3072D vectors
@@ -31,12 +34,14 @@ This system provides intelligent automation for RFP processing through semantic 
 - **Automatic Cleanup**: Configurable age-based document removal system
 
 ### Professional User Interface
+
 - **Corporate Design**: Clean, professional interface suitable for enterprise environments
 - **Modular Architecture**: Separated workflow and documentation interfaces
 - **Advanced Styling**: Custom CSS with hover effects and professional color schemes
 - **Responsive Layout**: Adaptive design with optimized sidebar and wide layouts
 
 ### Management Tools
+
 - **Command-Line Interface**: Comprehensive CLI for system administration
 - **Analytics Dashboard**: Real-time metrics and vector database statistics
 - **Collection Inspector**: Advanced debugging and data visualization tools
@@ -69,13 +74,16 @@ AI_AGENT_PROJECT/
 ## Installation and Setup
 
 ### Prerequisites
+
 - Python 3.8 or higher
 - Virtual environment management
 - Access to Qdrant vector database
 - Azure OpenAI or OpenAI API credentials (optional)
 
 ### Environment Setup
+
 1. **Clone and prepare environment**:
+
 ```bash
 git clone <repository-url>
 cd AI_AGENT_PROJECT
@@ -86,11 +94,13 @@ venv\Scripts\activate     # Windows
 ```
 
 2. **Install dependencies**:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. **Configure environment variables**:
+
 ```bash
 cp .env.example .env
 ```
@@ -98,6 +108,7 @@ cp .env.example .env
 ### Configuration Settings
 
 #### Essential Configuration (.env file)
+
 ```env
 # Qdrant Vector Database
 QDRANT_URL=https://your-cluster.qdrant.io
@@ -121,7 +132,9 @@ EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ## Usage Guide
 
 ### Primary Interface
+
 Launch the main application interface:
+
 ```bash
 streamlit run ui/rfp_manager.py
 ```
@@ -129,22 +142,26 @@ streamlit run ui/rfp_manager.py
 ### Command-Line Tools
 
 #### Vector Database Inspection
+
 ```bash
 python qdrant/inspector.py
 ```
 
 #### Database Maintenance
+
 ```bash
 python qdrant/cleaner.py
 python qdrant/cleaner.py --quick-clean
 ```
 
 #### ReAct Agent Testing
+
 ```bash
 python react_demo_simple.py
 ```
 
 #### CLI Management Interface
+
 ```bash
 python rfp_manager_cli.py
 ```
@@ -153,12 +170,13 @@ python rfp_manager_cli.py
 
 ### Vector Database Collections
 
-| Collection Name | Document Count | Vector Dimension | Primary Usage |
-|----------------|----------------|------------------|---------------|
-| `internal_knowledge_base` | 1,500+ | 384D/3072D | Technical documentation |
-| `rfp_qa_history` | 450+ | 384D/3072D | Validated Q&A responses |
+| Collection Name             | Document Count | Vector Dimension | Primary Usage           |
+| --------------------------- | -------------- | ---------------- | ----------------------- |
+| `internal_knowledge_base` | 1,500+         | 384D/3072D       | Technical documentation |
+| `rfp_qa_history`          | 450+           | 384D/3072D       | Validated Q&A responses |
 
 ### Performance Characteristics
+
 - **Query Response Time**: < 2 seconds average
 - **Vector Search**: Cosine similarity with 95%+ accuracy
 - **Concurrent Users**: Supports 10+ simultaneous sessions
@@ -166,6 +184,7 @@ python rfp_manager_cli.py
 - **Memory Footprint**: < 2GB RAM typical usage
 
 ### Integration Capabilities
+
 - **Azure OpenAI**: Production-grade language models
 - **Ollama**: Local development model support
 - **Qdrant Cloud**: Managed vector database service
@@ -177,21 +196,27 @@ python rfp_manager_cli.py
 ### Key Components
 
 #### ReAct Agent System
+
 The ReAct (Reasoning and Acting) agent provides structured problem-solving through:
+
 - **Internal Knowledge Tool**: Searches technical documentation
-- **RFP History Tool**: Queries validated historical responses  
+- **RFP History Tool**: Queries validated historical responses
 - **Web Search Tool**: Contextual internet research
 - **Maximum 3 iterations**: Prevents infinite reasoning loops
 
 #### Vector Pre-calculation System
+
 Performance optimization through:
+
 - **Question Embedding**: Pre-computed during initial processing
 - **Session Storage**: Temporary vector caching
 - **Batch Processing**: Efficient multi-question handling
 - **Reuse Mechanism**: Eliminates redundant calculations
 
 #### Automatic RFP Management
+
 Intelligent document lifecycle:
+
 - **Sequential Numbering**: Unique identifier assignment
 - **Age Tracking**: Automatic increment per submission
 - **Cleanup Process**: Removal of documents older than 20 cycles
@@ -200,12 +225,14 @@ Intelligent document lifecycle:
 ## Maintenance and Monitoring
 
 ### Regular Maintenance Tasks
+
 - **Database Cleanup**: Weekly removal of outdated documents
 - **Vector Reindexing**: Monthly optimization of search indices
 - **Performance Monitoring**: Continuous query performance tracking
 - **Backup Procedures**: Regular export of validated Q&A pairs
 
 ### Troubleshooting
+
 - **Connection Issues**: Verify Qdrant URL and API key configuration
 - **Performance Degradation**: Run collection inspection and cleanup
 - **Memory Issues**: Monitor vector cache size and clear as needed
@@ -214,12 +241,14 @@ Intelligent document lifecycle:
 ## Security and Compliance
 
 ### Data Protection
+
 - **API Key Management**: Secure environment variable storage
 - **Document Isolation**: Logical separation of client data
 - **Access Controls**: Role-based interface restrictions
 - **Audit Trails**: Complete operation logging and traceability
 
-### Privacy Considerations  
+### Privacy Considerations
+
 - **Local Processing**: Option for on-premises deployment
 - **Data Retention**: Configurable document lifecycle policies
 - **Anonymization**: Support for sensitive information filtering
@@ -228,12 +257,14 @@ Intelligent document lifecycle:
 ## Contributing
 
 ### Development Standards
+
 - **Code Quality**: PEP 8 compliance with type hints
 - **Testing**: Comprehensive unit and integration tests
 - **Documentation**: Detailed docstrings and API documentation
 - **Version Control**: Structured commit messages and branching
 
 ### Commit Message Format
+
 ```
 feat: add new functionality
 fix: resolve bug or issue

@@ -675,7 +675,7 @@ def show_rfp_manager():
         # RFP File Selection in main body
         st.subheader("Select RFP File")
         selected_file = st.selectbox(
-            "Choose an RFP PDF file to process:",
+            "Choose a RFP to process:",
             options=rfp_files,
             help="Select a PDF file from the uploaded RFPs.",
             key="main_rfp_selector"
@@ -714,8 +714,8 @@ def show_rfp_manager():
     
     # Step 4: Editing Interface (only shown after parsing)
     if 'rfp_data' in st.session_state:
-        st.header(f"Edit Questions & Answers")
-        st.subheader(f"Current File: {st.session_state.current_file}")
+        st.header(f"Current RFP: {st.session_state.current_file}")
+        
         
         # Display editable table
         st.markdown("### Questions, Answers & Comments")
@@ -745,7 +745,7 @@ def show_rfp_manager():
                 "Validator Name": st.column_config.TextColumn(
                     "Validator Name",
                     width="medium",
-                    help="Name of the person who validates this Q&A trio"
+                    help="Name of the person who validates this Q&A"
                 )
             },
             hide_index=True,
@@ -860,70 +860,44 @@ def show_rfp_manager():
                 st.success(f"Saved to: {filepath}")
         
         with col3:
-            # Submit section with all metadata fields
+            # Submit section with only submitter name
             st.markdown("**Submit Information**")
             
-            # Create two rows for the input fields
-            validator_name = st.text_input(
-                "Validator Name",
-                placeholder="Enter validator name",
-                help="Name of the person validating this RFP",
-                key="validator_name_input"
+            submitter_name = st.text_input(
+                "Submitter Name",
+                placeholder="Enter submitter name",
+                help="Name of the person submitting this RFP",
+                key="submitter_name_input"
             )
             
-            # Second row with submitter and source
-            sub_col1, sub_col2 = st.columns(2)
-            with sub_col1:
-                submitter_name = st.text_input(
-                    "Submitter Name",
-                    placeholder="Enter submitter name",
-                    help="Name of the person submitting this RFP",
-                    key="submitter_name_input"
-                )
-            
-            with sub_col2:
-                source = st.text_input(
-                    "Source",
-                    placeholder="e.g., Client, Internal, Tender",
-                    help="Source or origin of this RFP (optional)",
-                    key="source_input"
-                )
-            
-            if st.button("Submit", type="primary", use_container_width=True, help="Complete RFP: Save, Index in Vector DB, and Archive"):
-                # Validation
-                missing_fields = []
-                if not validator_name or not validator_name.strip():
-                    missing_fields.append("Validator Name")
+            if st.button("Submit", type="primary", use_container_width=True, help="Complete RFP: Save and Archive"):
+                # Validation - only submitter name required
                 if not submitter_name or not submitter_name.strip():
-                    missing_fields.append("Submitter Name")
-                
-                if missing_fields:
-                    st.error(f"Please enter the following required fields: {', '.join(missing_fields)}")
+                    st.error("Please enter the Submitter Name")
                 else:
-                    with st.spinner("Submitting RFP and indexing in vector database..."):
+                    with st.spinner("Submitting RFP..."):
                         # Get pre-computed vectors from session state
                         question_vectors = st.session_state.get('rfp_question_vectors', None)
                         
+                        # Use submitter name as validator name and no source
                         success, result, excel_file, indexed_count = submit_completed_rfp(
                             st.session_state.current_file, 
                             edited_df, 
-                            validator_name.strip(),
-                            submitter_name.strip(),
-                            source.strip() if source else None,
+                            submitter_name.strip(),  # validator_name = submitter_name
+                            submitter_name.strip(),  # submitter_name
+                            None,  # source = None
                             question_vectors
                         )
                         if success:
                             st.success(f"""
                             **RFP Successfully Submitted!**
                             
-                            **Validated by**: {validator_name.strip()}
                             **Submitted by**: {submitter_name.strip()}
-                            **Source**: {source.strip() if source else "Not specified"}
                             **Archived as**: {result}
                             **Excel saved**: {excel_file}
                             **Vector DB indexed**: {indexed_count} Q&A pairs
                             
-                            The RFP knowledge is now available for future AI processing!
+                            The RFP knowledge is now increased for future processing!
                             """)
                             # Clear session state and refresh
                             if 'rfp_data' in st.session_state:

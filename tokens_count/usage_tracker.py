@@ -11,24 +11,16 @@ from pathlib import Path
 
 class LocalUsageTracker:
     def __init__(self, usage_file="usage_log.json"):
-        self.usage_file = Path(usage_file)
-        self.load_usage()
+        # Ne pas sauvegarder de façon persistante - données en mémoire seulement
+        self.usage_data = {"sessions": [], "total_tokens": 0, "total_requests": 0}
     
     def load_usage(self):
-        """Load usage history"""
-        if self.usage_file.exists():
-            try:
-                with open(self.usage_file, 'r', encoding='utf-8') as f:
-                    self.usage_data = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                self.usage_data = {"sessions": [], "total_tokens": 0, "total_requests": 0}
-        else:
-            self.usage_data = {"sessions": [], "total_tokens": 0, "total_requests": 0}
+        """Les données ne sont pas chargées depuis un fichier - mémoire seulement"""
+        pass
     
     def save_usage(self):
-        """Save usage data"""
-        with open(self.usage_file, 'w', encoding='utf-8') as f:
-            json.dump(self.usage_data, f, indent=2, ensure_ascii=False)
+        """Les données ne sont pas sauvegardées - mémoire seulement"""
+        pass
     
     def log_embedding_request(self, texts, provider="azure_openai", model="text-embedding-3-large"):
         """Log an embedding request"""
@@ -69,7 +61,7 @@ class LocalUsageTracker:
             "texts_preview": texts[:2] if len(texts) <= 5 else texts[:2] + ["..."]
         }
         
-        # Add to history
+        # Add to history (en mémoire seulement)
         self.usage_data["sessions"].append(session)
         self.usage_data["total_tokens"] += estimated_tokens
         self.usage_data["total_requests"] += 1
@@ -78,7 +70,7 @@ class LocalUsageTracker:
         if len(self.usage_data["sessions"]) > 100:
             self.usage_data["sessions"] = self.usage_data["sessions"][-100:]
         
-        self.save_usage()
+        # Pas de sauvegarde persistante
         return session
     
     def get_usage_summary(self, days=7):
@@ -141,19 +133,47 @@ class LocalUsageTracker:
                 preview = session.get('texts_preview', [''])[0][:30] + "..." if session.get('texts_preview') else "N/A"
                 print(f"  {time_str} | {provider} | {tokens} tokens | ${cost:.6f} | '{preview}'")
 
-# Simple display of recent calls
+# Simple display - données en mémoire seulement (non persistantes)
 if __name__ == "__main__":
-    tracker = LocalUsageTracker("embeddings_usage.json")
+    print("📊 Usage Tracker - Mode Mémoire Seulement")
+    print("=" * 45)
+    print("ℹ️  Les données de tracking ne survivent pas aux redémarrages")
+    print("ℹ️  Seules les données de la session courante sont trackées")
+    print()
+    
+    # Créer un tracker temporaire pour la démonstration
+    tracker = LocalUsageTracker()
     
     if not tracker.usage_data["sessions"]:
-        print("📊 No embedding calls recorded")
+        print("📊 Aucun appel d'embedding enregistré dans cette session")
+        print()
+        print("📝 Données trackées lors des appels :")
+        print("   - timestamp")
+        print("   - provider") 
+        print("   - tokens utilisés")
+        print("   - coût estimé")
+        print("   - nombre de textes traités")
+        print()
+        print("💡 Les données sont perdues à chaque redémarrage du système")
     else:
-        print("📊 Embeddings Monitoring")
-        print("=" * 40)
+        # Calculate comprehensive statistics
+        total_sessions = len(tracker.usage_data["sessions"])
+        total_tokens = sum(s.get('estimated_tokens', 0) for s in tracker.usage_data["sessions"])
+        total_cost = sum(s.get('estimated_cost_usd', 0) for s in tracker.usage_data["sessions"])
+        
+        # Build output text for both display and file saving
+        output_lines = []
+        output_lines.append("📊 Embeddings Monitoring")
+        output_lines.append("=" * 40)
+        output_lines.append("")
+        output_lines.append("📈 TOTAL USAGE SINCE BEGINNING:")
+        output_lines.append(f"🎯 Total tokens: {total_tokens:,}")
+        output_lines.append(f"💰 Total estimated cost: ${total_cost:.6f} USD")
+        output_lines.append("")
         
         # Show last 5 calls
         recent_sessions = tracker.usage_data["sessions"][-5:]
-        print(f"🕐 Last {len(recent_sessions)} calls:")
+        output_lines.append(f"🕐 Last {len(recent_sessions)} calls:")
         
         total_recent_cost = 0
         for session in recent_sessions:
@@ -166,8 +186,13 @@ if __name__ == "__main__":
             num_texts = session.get('num_texts', 1)
             preview = session.get('texts_preview', [''])[0][:35] + "..." if session.get('texts_preview') else "N/A"
             
-            print(f"  {time_str} | {provider:12} | {tokens:3}t | ${cost:.6f} | {num_texts} text{'s' if num_texts > 1 else ''} | '{preview}'")
+            output_lines.append(f"  {time_str} | {provider:12} | {tokens:3}t | ${cost:.6f} | {num_texts} text{'s' if num_texts > 1 else ''} | '{preview}'")
         
-        print()
-        print(f"💰 Total cost (last 5): ${total_recent_cost:.6f} USD")
-        print(f"📈 Overall total: {tracker.usage_data['total_requests']} requests, ${sum(s.get('estimated_cost_usd', 0) for s in tracker.usage_data['sessions']):.6f} USD")
+        output_lines.append("")
+        output_lines.append(f"💰 Estimated Cost on last 5 requests: ${total_recent_cost:.6f} USD")
+        
+        # Print to console seulement (données non persistantes)
+        output_text = "\n".join(output_lines)
+        print(output_text)
+        
+        print(f"\n💡 Note: Ces données sont uniquement en mémoire et seront perdues au redémarrage")

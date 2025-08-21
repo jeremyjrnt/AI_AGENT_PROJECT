@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Union
 from uuid import uuid4
 import sys
+import json
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -48,8 +50,29 @@ def upsert_data(
     Returns:
         int: Number of documents successfully indexed
     """
+    # Setup logging for this session
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"logs/upsert_data_{timestamp}.json"
+    
+    # Create logs directory if it doesn't exist
+    Path("logs").mkdir(exist_ok=True)
+    
+    # Initialize session log
+    session_log = {
+        "timestamp": timestamp,
+        "folder_path": str(folder_path),
+        "target_chars": target_chars,
+        "overlap": overlap,
+        "mode": mode,
+        "collection_name": collection_name,
+        "parsed_documents": [],
+        "embedding_info": {},
+        "final_stats": {}
+    }
+    
     print(f"🔄 Parsing data from: {folder_path}")
     print(f"   Mode: {mode}, Target chars: {target_chars}, Overlap: {overlap}")
+    print(f"📝 Logging to: {log_file}")
     
     # Parse using internal_parser
     parsed_docs = parse_folder_to_data(
@@ -61,9 +84,47 @@ def upsert_data(
     
     if not parsed_docs:
         print("❌ No documents parsed")
+        session_log["final_stats"]["parsed_count"] = 0
+        session_log["final_stats"]["status"] = "no_documents"
+        
+        # Save empty session log
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(session_log, f, ensure_ascii=False, indent=2)
         return 0
     
     print(f"✅ Parsed {len(parsed_docs)} documents")
+    
+    # Log all parsed documents
+    for i, doc in enumerate(parsed_docs):
+        doc_log = {
+            "document_index": i + 1,
+            "chunk_id": doc.get("chunk_id", ""),
+            "doc_id": doc.get("doc_id", ""),
+            "title": doc.get("title", ""),
+            "text_length": len(doc.get("text", "")),
+            "text_preview": doc.get("text", "")[:100] + "..." if len(doc.get("text", "")) > 100 else doc.get("text", ""),
+            "source": doc.get("source", ""),
+            "processing_mode": doc.get("processing_mode", ""),
+            "metadata": doc.get("metadata", {}),
+        }
+        
+        # Add enhanced_text info if available
+        enhanced_txt = ""
+        if doc.get("enhanced_text"):
+            enhanced_txt = doc.get("enhanced_text")
+        elif doc.get("llm", {}).get("enhanced_text"):
+            enhanced_txt = doc.get("llm", {}).get("enhanced_text")
+        elif doc.get("metadata", {}).get("llm", {}).get("enhanced_text"):
+            enhanced_txt = doc.get("metadata", {}).get("llm", {}).get("enhanced_text")
+        
+        if enhanced_txt:
+            doc_log["enhanced_text_length"] = len(enhanced_txt)
+            doc_log["enhanced_text_preview"] = enhanced_txt[:100] + "..." if len(enhanced_txt) > 100 else enhanced_txt
+            doc_log["has_enhanced_text"] = True
+        else:
+            doc_log["has_enhanced_text"] = False
+        
+        session_log["parsed_documents"].append(doc_log)
     
     # Extract texts for embedding (prioritize enhanced_text)
     texts = []
@@ -126,25 +187,79 @@ def upsert_data(
     
     if not texts:
         print("❌ No valid texts for embedding")
+        session_log["final_stats"]["parsed_count"] = len(parsed_docs)
+        session_log["final_stats"]["valid_for_embedding"] = 0
+        session_log["final_stats"]["status"] = "no_valid_texts"
+        
+        # Save session log
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(session_log, f, ensure_ascii=False, indent=2)
         return 0
+    
+    # Log embedding information
+    session_log["embedding_info"] = {
+        "total_texts_for_embedding": len(texts),
+        "enhanced_text_count": sum(1 for payload in payloads if payload.get("embedded_field") == "enhanced_text"),
+        "original_text_count": sum(1 for payload in payloads if payload.get("embedded_field") == "text"),
+        "average_text_length": sum(len(text) for text in texts) / len(texts) if texts else 0,
+        "embedding_start_time": datetime.now().isoformat()
+    }
     
     print(f"🗃️ Indexing {len(texts)} documents to {collection_name}...")
     
-    # Get embeddings
-    emb = get_embeddings()
-    vectors = emb.embed_documents(texts)
-    if len(vectors) != len(texts):
-        raise RuntimeError("Embedding count mismatch.")
+    try:
+        # Get embeddings
+        emb = get_embeddings()
+        vectors = emb.embed_documents(texts)
+        if len(vectors) != len(texts):
+            raise RuntimeError("Embedding count mismatch.")
+        
+        # Build points
+        points = [
+            PointStruct(id=str(uuid4()), vector=vec, payload=pld)
+            for vec, pld in zip(vectors, payloads)
+        ]
+        
+        # Upsert to Qdrant
+        client = get_qdrant_client()
+        client.upsert(collection_name=collection_name, points=points)
+        
+        # Log successful completion
+        session_log["embedding_info"]["embedding_end_time"] = datetime.now().isoformat()
+        session_log["embedding_info"]["embedding_success"] = True
+        session_log["final_stats"] = {
+            "parsed_count": len(parsed_docs),
+            "valid_for_embedding": len(texts),
+            "successfully_indexed": len(points),
+            "status": "success"
+        }
+        
+        print(f"✅ Successfully indexed {len(points)} documents")
+        
+    except Exception as e:
+        # Log error information
+        session_log["embedding_info"]["embedding_end_time"] = datetime.now().isoformat()
+        session_log["embedding_info"]["embedding_success"] = False
+        session_log["embedding_info"]["error"] = str(e)
+        session_log["final_stats"] = {
+            "parsed_count": len(parsed_docs),
+            "valid_for_embedding": len(texts),
+            "successfully_indexed": 0,
+            "status": "failed",
+            "error": str(e)
+        }
+        
+        # Save error log and re-raise
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(session_log, f, ensure_ascii=False, indent=2)
+        raise
     
-    # Build points
-    points = [
-        PointStruct(id=str(uuid4()), vector=vec, payload=pld)
-        for vec, pld in zip(vectors, payloads)
-    ]
+    # Save complete session log
+    with open(log_file, 'w', encoding='utf-8') as f:
+        json.dump(session_log, f, ensure_ascii=False, indent=2)
     
-    # Upsert to Qdrant
-    client = get_qdrant_client()
-    client.upsert(collection_name=collection_name, points=points)
+    print(f"📋 Session log saved to: {log_file}")
+    
     return len(points)
 
 

@@ -35,10 +35,8 @@ class InternalParser:
         
         # Auto-select model based on mode
         if model is None:
-            if self.mode == "prod":
-                self.model = "qwen2.5:0.5b"  # Fast and cost-effective for production
-            elif self.mode == "hybrid":
-                self.model = "qwen2.5:0.5b"  # Default Qwen model for hybrid mode (ultra-light and fast)
+            if self.mode == "prod" or self.mode == "hybrid":
+                self.model = "qwen2.5:0.5b"  # Back to qwen2.5:0.5b - more reliable without thinking
             else:
                 self.model = None  # No LLM needed in dev mode
         else:
@@ -54,7 +52,7 @@ class InternalParser:
         """Initialize LLM for production or hybrid mode text enhancement"""
         try:
             # For hybrid mode with Qwen, use Ollama
-            if self.mode == "hybrid" and "qwen" in self.model.lower():
+            if "qwen" in self.model.lower():
                 try:
                     from langchain_ollama import ChatOllama
                     
@@ -71,21 +69,57 @@ class InternalParser:
                     self.llm = None
                     return
             
-            # For production mode or OpenAI models, use OpenAI
-            if not settings.OPENAI_API_KEY:
-                print(f"⚠️ OpenAI API key not found. Falling back to dev mode.")
+            # For production mode, use Azure OpenAI first, then fallback to standard OpenAI
+            if self.mode == "prod":
+                # Try Azure OpenAI first
+                if settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_ENDPOINT:
+                    try:
+                        from langchain_openai import AzureChatOpenAI
+                        
+                        self.llm = AzureChatOpenAI(
+                            api_key=settings.AZURE_OPENAI_API_KEY,
+                            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                            deployment_name=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
+                            api_version=settings.AZURE_OPENAI_API_VERSION,
+                            temperature=0.1
+                        )
+                        print(f"🚀 Production Mode: Using Azure OpenAI model {settings.AZURE_OPENAI_CHAT_DEPLOYMENT} for text enhancement")
+                        return
+                    except Exception as e:
+                        print(f"⚠️ Azure OpenAI failed: {e}. Trying standard OpenAI...")
+                
+                # Fallback to standard OpenAI
+                if settings.OPENAI_API_KEY:
+                    from langchain_openai import ChatOpenAI
+                    
+                    self.llm = ChatOpenAI(
+                        model=self.model,
+                        temperature=0.1,
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                    print(f"🚀 Production Mode: Using OpenAI model {self.model} for text enhancement")
+                    return
+                
+                # No LLM available, fallback to dev mode
+                print(f"⚠️ No OpenAI API key found. Falling back to dev mode.")
                 self.mode = "dev"
                 self.llm = None
                 return
             
-            from langchain_openai import ChatOpenAI
-            
-            self.llm = ChatOpenAI(
-                model=self.model,
-                temperature=0.1,
-                api_key=settings.OPENAI_API_KEY
-            )
-            print(f"🚀 {self.mode.title()} Mode: Using OpenAI model {self.model} for text enhancement")
+            # For other modes, use standard OpenAI if available
+            if settings.OPENAI_API_KEY:
+                from langchain_openai import ChatOpenAI
+                
+                self.llm = ChatOpenAI(
+                    model=self.model,
+                    temperature=0.1,
+                    api_key=settings.OPENAI_API_KEY
+                )
+                print(f"🚀 {self.mode.title()} Mode: Using OpenAI model {self.model} for text enhancement")
+            else:
+                print(f"⚠️ OpenAI API key not found. Falling back to dev mode.")
+                self.mode = "dev"
+                self.llm = None
             
         except ImportError:
             print("⚠️ Required LangChain packages not installed. Falling back to dev mode.")
@@ -111,26 +145,28 @@ class InternalParser:
             return {"enhanced_text": raw_text, "summary": "", "key_topics": ""}
         
         try:
-            # Use consistent English prompt for all modes with emphasis on longer enhanced text
+            # Use consistent English prompt for all modes with enhanced text reformulation focus
             prompt = f"""
-You are an expert document processor improving internal company documentation for better searchability.
+You are a document processor. Your task is to create a concise and improved reformulation of the original text.
 
 Document Title: {title or "Unknown"}
-Raw Text Content: {raw_text[:2000]}...
+Original Text: {raw_text[:1500]}
+
+Create a JSON response with these fields:
+1. enhanced_text: A clear, concise reformulation that improves and restructures the original content while preserving key informations.
+2. summary: Brief overview of the main point (50-100 characters)
+3. key_topics: Main topics extracted from the content (comma-separated)
 
 INSTRUCTIONS:
-1. ENHANCED_TEXT: Create a comprehensive, well-structured version of the original text. This should be the LONGEST field with 6-10 sentences minimum. Include all key details, technical information, and context from the original text. Improve readability while preserving all important information.
+- enhanced_text should be a REFORMULATION, not just a summary - rewrite the content in a clearer, more structured way
+- Preserve all important information but improve readability and flow
+- Remove redundant phrases, navigation elements, and formatting artifacts
+- Respond ONLY with valid JSON, no explanations or thinking
+- Make the text more professional and concise than the original
 
-2. SUMMARY: Create a brief executive summary in 2-3 sentences maximum.
-
-3. KEY_TOPICS: List main topics and keywords (comma-separated).
-
-CRITICAL: The enhanced_text MUST be significantly longer than the summary. Aim for 300-500+ characters for enhanced_text.
-
-Respond in JSON format:
 {{
-    "enhanced_text": "comprehensive detailed text with all key information, technical details, context, and improved structure - minimum 6-10 sentences covering all aspects of the original content",
-    "summary": "brief executive summary maximum 2-3 sentences",
+    "enhanced_text": "Reformulated and improved version of the original content with better structure and clarity",
+    "summary": "Brief overview in 1-2 sentences", 
     "key_topics": "topic1, topic2, topic3"
 }}
 """
@@ -194,6 +230,11 @@ Respond in JSON format:
                     else:
                         summary = enhanced_text[:100] + "..."
                 
+                # Limit enhanced_text to 2000 characters maximum
+                if len(enhanced_text) > 2000:
+                    enhanced_text = enhanced_text[:2000].rstrip() + "..."
+                    print(f"📏 Enhanced text truncated to 2000 chars")
+                
                 return {
                     "enhanced_text": enhanced_text,
                     "summary": summary,
@@ -208,6 +249,10 @@ Respond in JSON format:
                 raw_response = response.content.strip()
                 
                 # Clean up common patterns from failed responses
+                enhanced_text = ""
+                summary = ""
+                key_topics = ""
+                
                 if "Enhanced Text:" in raw_response:
                     # Try to extract structured info from plain text response
                     lines = raw_response.split('\n')
@@ -261,6 +306,11 @@ Respond in JSON format:
                     words = re.findall(r'\b[A-Z][a-z]+\b', (title or "") + " " + enhanced_text)
                     key_topics = ", ".join(list(dict.fromkeys(words))[:5])  # Remove duplicates, take first 5
                 
+                # Limit enhanced_text to 2000 characters maximum (fallback case)
+                if len(enhanced_text) > 2000:
+                    enhanced_text = enhanced_text[:2000].rstrip() + "..."
+                    print(f"📏 Enhanced text truncated to 2000 chars (fallback)")
+                
                 return {
                     "enhanced_text": enhanced_text,
                     "summary": summary,
@@ -269,7 +319,9 @@ Respond in JSON format:
                 
         except Exception as e:
             print(f"⚠️ LLM enhancement failed: {e}")
-            return {"enhanced_text": raw_text, "summary": "", "key_topics": ""}
+            # Limit fallback text to 2000 characters as well
+            fallback_text = raw_text[:2000].rstrip() + "..." if len(raw_text) > 2000 else raw_text
+            return {"enhanced_text": fallback_text, "summary": "", "key_topics": ""}
     
     def parse_html_file(self, file_path: Path, target_chars: int = 1200, overlap: int = 200) -> List[Dict[str, Any]]:
         """Parse one HTML file and return chunks with mode-appropriate processing"""
@@ -343,7 +395,7 @@ Respond in JSON format:
                     chunk_data["metadata"]["llm"] = {
                         "model": self.model,
                         "enhanced_with_llm": True,
-                        "enhanced_text": enhanced_text,  # Full enhanced text (not chunked)
+                        "enhanced_text": enhanced_text,  # Full enhanced text
                         "summary": summary,
                         "key_topics": key_topics,
                         "is_hybrid_mode": True

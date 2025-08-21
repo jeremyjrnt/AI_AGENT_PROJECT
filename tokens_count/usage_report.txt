@@ -1,0 +1,17 @@
+Detailed Usage Report - 2025-08-21 12:25:14
+======================================================================
+ Embeddings Monitoring
+========================================
+
+ TOTAL USAGE SINCE BEGINNING:
+ Total tokens: 4,944,279
+ Total estimated cost: $0.642756 USD
+
+ Last 5 calls:
+  21/08 11:38:41 | azure_openai | 460t | $0.000060 | 20 texts | 'Enhanced reformulation of the origi...'
+  21/08 11:39:11 | azure_openai | 3971t | $0.000516 | 11 texts | 'Webinar Hub | Okta Secure AI starts...'
+  21/08 11:39:23 | azure_openai | 692t | $0.000090 | 10 texts | 'Secure Your Organization's Access w...'
+  21/08 11:39:36 | azure_openai | 1500t | $0.000195 | 4 texts | 'Your Privacy Choices Okta Looks lik...'
+  21/08 11:50:35 | azure_openai |   3t | $0.000000 | 1 text | '__dim_probe__...'
+
+ Estimated Cost on last 5 requests: $0.000861 USD
