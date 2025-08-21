@@ -16,7 +16,7 @@ Responding to Requests for Proposal (RFPs) is a critical but often painful proce
 - Automatically extracts and numbers questions from incoming RFPs.  
 - Uses semantic search and AI agents to draft accurate responses from internal docs, historical Q&A, and web context.  
 - Ensures reliability with a **human-in-the-loop validation step**.  
-- Exports professional, ready-to-submit RFP responses in Excel or PDF.  
+- Exports professional, ready-to-submit RFP responses in Excel.  
 
 By reducing manual effort and surfacing the best institutional knowledge, RFPilot enables organizations to **respond faster, with higher quality, and at greater scale.**
 
