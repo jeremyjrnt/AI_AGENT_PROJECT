@@ -25,6 +25,8 @@ __pycache__/
 
 # Data files et outputs RFP
 data/
+!data/new_RFPs/
+!data/new_RFPs/*
 parsed_data.json
 outputs/*.xlsx
 outputs/*.csv
