@@ -68,9 +68,8 @@ This allowed us to simulate realistic proposal workflows while staying within op
 
 ### Management Tools
 
-- **Analytics Dashboard**: Real-time metrics and vector database statistics
 - **Collection Inspector**: Advanced debugging and data visualization tools
-- **Maintenance Suite**: Reset, cleanup, and optimization utilities
+- **Maintenance Suite**: Reset, cleanup the VectorDB
 
 ## Agent Overview and Detailed Functionality
 
@@ -560,3 +559,12 @@ While RFPilot already demonstrates promising results, there are several avenues 
    Currently, the corresponding code exists but was commented out since it was not fully working and was not critical for testing or reproducing results.  
    For this project, the `internal_knowledge_base` collection was already pre-embedded with **1,348 points** (see [Vector Database Collections](#vector-database-collections)).  
    Completing this feature would allow users to upload and manage their own internal documentation collections directly through the UI.
+
+6. **Acronym-Aware Retrieval**  
+   RFPs often contain numerous acronyms terms that may not be well represented in semantic vector spaces.  
+   Future work should integrate **acronym expansion and mapping** into the retrieval pipeline, ensuring that cosine similarity searches are complemented with acronym resolution for higher recall and precision.
+
+7. **Topic- and Summary-Guided Retrieval**  
+   Many RFP questions are inherently **category-driven** (security, compliance, integrations).  
+   Future work should leverage **key topics** and **document summaries** extracted during preprocessing to guide retrieval by category.  
+   This would enable the system to **filter knowledge points thematically**, improving retrieval accuracy when a question clearly relates to a specific domain.
