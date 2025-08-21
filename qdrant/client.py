@@ -25,8 +25,8 @@ except ImportError:
     usage_tracker = None
 
 # Collections
-INTERNAL_COLLECTION = "internal_knowledge_base"  # stable
-RFP_QA_COLLECTION = "rfp_qa_history"             # evolving
+INTERNAL_COLLECTION = "internal_knowledge_base"  
+RFP_QA_COLLECTION = "rfp_qa_history"             
 
 
 # ---------- Embeddings utilities (LangChain) ----------

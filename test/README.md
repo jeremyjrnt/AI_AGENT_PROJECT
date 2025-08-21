@@ -1,2 +1,5 @@
-# Test scripts for the RAG pipeline and related features.
-# Place all test and demo scripts in this folder.
+# test/
+
+This folder contains the test suite for the project.
+
+- `main_test.py`: Main test script for core functionalities.
