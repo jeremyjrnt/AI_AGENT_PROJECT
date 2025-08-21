@@ -68,7 +68,6 @@ This allowed us to simulate realistic proposal workflows while staying within op
 
 ### Management Tools
 
-- **Command-Line Interface**: Comprehensive CLI for system administration
 - **Analytics Dashboard**: Real-time metrics and vector database statistics
 - **Collection Inspector**: Advanced debugging and data visualization tools
 - **Maintenance Suite**: Reset, cleanup, and optimization utilities
