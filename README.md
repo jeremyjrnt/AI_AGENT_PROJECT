@@ -345,7 +345,7 @@ The RFPilot system provides a **professional and user-friendly interface** to in
 
 Overall, the interface allows end-to-end testing of the RFP workflow without additional configuration.
 
-**NOTE :**: In this project, a simple natural language prompt is obviously not adequate to trigger the agent’s workflow. Instead, the **selection of an RFP document** itself acts as the prompt that initiates the processing flow.
+**NOTE :** In this project, a simple natural language prompt is obviously not adequate to trigger the agent’s workflow. Instead, the **selection of an RFP document** itself acts as the prompt that initiates the processing flow.
 
 ---
 
