@@ -1,4 +1,8 @@
-# RFPilot - AI Agent RFP Management System
+<p align="center">
+  <img src="RFPilot_logo.png" alt="RFPilot Logo" width="200"/>
+</p>
+
+# RFPilot - AI Agent for RFP Completion
 
 Request for Proposal (RFP) automation system leveraging advanced AI, vector databases, and ReAct agents to compose proposal response workflows.
 
