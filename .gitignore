@@ -27,6 +27,10 @@ __pycache__/
 data/
 !data/new_RFPs/
 !data/new_RFPs/*
+!data/parsed_RFPs/
+!data/parsed_RFPs/**
+!data/past_RFPs_pdf/
+!data/past_RFPs_pdf/**
 parsed_data.json
 outputs/*.xlsx
 outputs/*.csv

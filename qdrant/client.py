@@ -112,13 +112,23 @@ class TrackedEmbeddings:
 def detect_vector_size(embeddings_obj) -> int:
     """
     Determine embedding vector dimension by encoding a tiny probe.
-    We never hardcode sizes; we ask the model once.
+    For remote providers (OpenAI/Azure), avoid unnecessary network calls by
+    falling back to settings.get_default_vector_size() when appropriate.
     """
-    probe: List[str] = ["__dim_probe__"]
-    vecs = embeddings_obj.embed_documents(probe)  # -> List[List[float]]
-    if not vecs or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
-        raise RuntimeError("Failed to detect embedding dimension from provider.")
-    return len(vecs[0])
+    try:
+        # If using OpenAI/Azure, prefer configured defaults to avoid network handshakes
+        if getattr(settings, "EMBEDDING_PROVIDER", "").lower() == "openai":
+            return settings.get_default_vector_size()
+
+        # Local HF models: safe to probe
+        probe: List[str] = ["__dim_probe__"]
+        vecs = embeddings_obj.embed_documents(probe)  # -> List[List[float]]
+        if not vecs or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
+            raise RuntimeError("Failed to detect embedding dimension from provider.")
+        return len(vecs[0])
+    except Exception:
+        # Fallback to configured defaults
+        return settings.get_default_vector_size()
 
 
 # ---------- Qdrant utilities ----------
@@ -196,12 +206,26 @@ def setup_collections_dynamic(reset_rfp_history: bool = False) -> int:
     - RFP_QA_COLLECTION : optional reset if requested
     Returns the detected vector size.
     """
-    # 1) Get embeddings & detect size
-    emb = get_embeddings()
-    vector_size = detect_vector_size(emb)
-
-    # 2) Ensure collections
+    # Prefer existing INTERNAL_COLLECTION size if it exists to prevent mismatches
     client = get_qdrant_client()
+    existing_internal = None
+    try:
+        if collection_exists(client, INTERNAL_COLLECTION):
+            info = client.get_collection(INTERNAL_COLLECTION)
+            vectors = info.config.params.vectors
+            if isinstance(vectors, VectorParams):
+                existing_internal = vectors.size
+    except Exception:
+        existing_internal = None
+
+    if existing_internal:
+        vector_size = existing_internal
+    else:
+        # 1) Get embeddings & detect size on first-time setup
+        emb = get_embeddings()
+        vector_size = detect_vector_size(emb)
+
+    # 2) Ensure collections use the same size
     ensure_collection(client, INTERNAL_COLLECTION, vector_size, Distance.COSINE, recreate_if_mismatch=False)
     ensure_collection(client, RFP_QA_COLLECTION, vector_size, Distance.COSINE, recreate_if_mismatch=reset_rfp_history)
     return vector_size

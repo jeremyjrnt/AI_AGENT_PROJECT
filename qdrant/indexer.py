@@ -158,10 +158,15 @@ def upsert_data(
             continue
         
         texts.append(embedding_text)
-        
-        # Prepare metadata
-        metadata = doc.get("metadata", {})
-        metadata.update({
+
+        # Prepare compact metadata (avoid storing full text twice)
+        base_meta = dict(doc.get("metadata", {}) or {})
+        # Include helpful identifiers if present
+        for k in ("doc_id", "chunk_id", "title", "source", "processing_mode"):
+            if doc.get(k) and k not in base_meta:
+                base_meta[k] = doc.get(k)
+
+        base_meta.update({
             "parsing_mode": mode,
             "target_chars": target_chars,
             "overlap": overlap,
@@ -169,21 +174,19 @@ def upsert_data(
             "document_type": "internal_data",
             "embedded_field": embedded_field
         })
-        
-        # Store both text fields if available, but avoid duplication
+
+        # Add small preview only (to keep payload light)
         if original_txt:
-            metadata["text"] = original_txt
-        
-        # Only store enhanced_text at root level if it's not already in metadata structure
-        if enhanced_txt and embedded_field == "enhanced_text":
-            # Check if enhanced_text is already stored in metadata.llm structure
-            if not (metadata.get("llm", {}).get("enhanced_text")):
-                metadata["enhanced_text"] = enhanced_txt
-        
+            preview = original_txt[:300]
+            base_meta["text_preview"] = preview
         if doc.get('summary'):
-            metadata["summary"] = doc.get('summary')
-        
-        payloads.append(metadata)
+            base_meta["summary"] = doc.get('summary')
+
+        # Single content field used for retrieval display
+        payloads.append({
+            "content": embedding_text,
+            "metadata": base_meta
+        })
     
     if not texts:
         print("❌ No valid texts for embedding")
@@ -219,22 +222,29 @@ def upsert_data(
             PointStruct(id=str(uuid4()), vector=vec, payload=pld)
             for vec, pld in zip(vectors, payloads)
         ]
-        
-        # Upsert to Qdrant
+
+        # Upsert to Qdrant in safe batches to avoid 32MB request limit
         client = get_qdrant_client()
-        client.upsert(collection_name=collection_name, points=points)
-        
+        BATCH_SIZE = 128
+        total_indexed = 0
+        for start in range(0, len(points), BATCH_SIZE):
+            end = min(start + BATCH_SIZE, len(points))
+            batch = points[start:end]
+            print(f"   ⏫ Upserting batch {start//BATCH_SIZE + 1} ({len(batch)} points)...")
+            client.upsert(collection_name=collection_name, points=batch)
+            total_indexed += len(batch)
+
         # Log successful completion
         session_log["embedding_info"]["embedding_end_time"] = datetime.now().isoformat()
         session_log["embedding_info"]["embedding_success"] = True
         session_log["final_stats"] = {
             "parsed_count": len(parsed_docs),
             "valid_for_embedding": len(texts),
-            "successfully_indexed": len(points),
+            "successfully_indexed": total_indexed,
             "status": "success"
         }
-        
-        print(f"✅ Successfully indexed {len(points)} documents")
+
+        print(f"✅ Successfully indexed {total_indexed} documents")
         
     except Exception as e:
         # Log error information
@@ -363,10 +373,16 @@ def upsert_rfp(
             for vec, pld in zip(vectors, payloads)
         ]
 
-        # Upsert to Qdrant
+        # Upsert to Qdrant in safe batches to avoid payload limits
         client = get_qdrant_client()
-        client.upsert(collection_name=collection_name, points=points)
-        indexed_count = len(points)
+        BATCH_SIZE = 128
+        indexed_count = 0
+        for start in range(0, len(points), BATCH_SIZE):
+            end = min(start + BATCH_SIZE, len(points))
+            batch = points[start:end]
+            print(f"   ⏫ Upserting batch {start//BATCH_SIZE + 1} ({len(batch)} Q&A points)...")
+            client.upsert(collection_name=collection_name, points=batch)
+            indexed_count += len(batch)
 
         print(f"✅ Successfully indexed {indexed_count} Q&A pairs")
         print(f"📊 Metadata stored: submitter={submitter_name}, source={source or 'Not specified'}, validator_count={len([p for p in payloads if p['validator_name']])}")

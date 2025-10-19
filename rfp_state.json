@@ -1,7 +1,7 @@
 {
-  "current_rfp_number": 10,
-  "last_updated": "2025-08-21T19:43:01.479466",
-  "total_rfps_processed": 10,
+  "current_rfp_number": 15,
+  "last_updated": "2025-10-19T15:12:36.414365",
+  "total_rfps_processed": 15,
   "cleanup_enabled": true,
   "max_age_difference": 20
 }

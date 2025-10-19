@@ -14,7 +14,7 @@ env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # Qdrant Database Settings
-QDRANT_URL = os.getenv('QDRANT_URL', 'https://c9c63dad-8e5c-49a3-90f5-fb71773836fa.europe-west3-0.gcp.cloud.qdrant.io')
+QDRANT_URL = os.getenv('QDRANT_URL', 'https://4ad49858-e28b-4a10-a151-bd7093e1ca61.europe-west3-0.gcp.cloud.qdrant.io:6333')
 QDRANT_API_KEY = os.getenv('QDRANT_API_KEY', None)
 
 # Note: Collection names are defined in qdrant/client.py
@@ -29,7 +29,7 @@ EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM
 
 # OpenAI Settings (Standard et Azure)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', None)
-OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large')
+OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
 
 # Azure OpenAI Settings
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY', None)
