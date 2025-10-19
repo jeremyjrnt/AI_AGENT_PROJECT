@@ -501,7 +501,7 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT=team11-embedding
 
 # Standard OpenAI (Alternative)
 OPENAI_API_KEY=your-openai-key
-OPENAI_EMBEDDING_MODEL=text-embedding-3-large
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 # Embedding Provider Selection
 EMBEDDING_PROVIDER=huggingface  # or "openai"
