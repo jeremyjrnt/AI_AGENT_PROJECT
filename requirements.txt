@@ -13,6 +13,7 @@ langchain-ollama
 openai
 tiktoken
 python-dotenv
+streamlit
 # HTML parsing
 beautifulsoup4
 lxml
